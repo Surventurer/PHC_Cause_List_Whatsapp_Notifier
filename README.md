@@ -1,96 +1,96 @@
-# 📋 Patna High Court Cause List WhatsApp Notifier
+# Patna High Court Cause List WhatsApp Notifier
 
 An automated system that monitors the Patna High Court website for new cause lists and sends screenshots via WhatsApp Business Cloud API.
 
-## ✨ Features
+## Features
 
-- 🔍 **Automatic Date Detection** - Extracts cause list date directly from the court website
-- 📸 **Screenshot Capture** - Takes full-page screenshots using Microlink API
-- 📱 **WhatsApp Integration** - Sends screenshots via WhatsApp Business Cloud API
-- ⏰ **Scheduled Execution** - Runs between 9:30 PM - 11:30 PM, checking every 10 minutes
-- 🚫 **Duplicate Prevention** - Tracks sent messages to avoid sending multiple times per day
-- 👥 **Multiple Recipients** - Supports sending to multiple WhatsApp numbers
-
----
-
-## 🔄 Flow Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           SCHEDULER LOOP                                     │
-│                    (Runs continuously every 10 minutes)                      │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-                    ┌────────────────────────────────┐
-                    │   Is current time between      │
-                    │   9:30 PM and 11:30 PM?        │
-                    └────────────────────────────────┘
-                                     │
-                    ┌────────────────┴────────────────┐
-                    │ NO                              │ YES
-                    ▼                                 ▼
-        ┌───────────────────┐           ┌────────────────────────────┐
-        │ 💤 Sleep 10 mins  │           │ Was message already sent   │
-        │   & retry         │           │ today?                     │
-        └───────────────────┘           └────────────────────────────┘
-                                                     │
-                                    ┌────────────────┴────────────────┐
-                                    │ YES                             │ NO
-                                    ▼                                 ▼
-                        ┌───────────────────┐       ┌─────────────────────────────┐
-                        │ ✅ Skip - already │       │ 🌐 Fetch webpage from       │
-                        │   sent today      │       │ Patna High Court            │
-                        └───────────────────┘       └─────────────────────────────┘
-                                                                 │
-                                                                 ▼
-                                              ┌─────────────────────────────────────┐
-                                              │ 🔍 Extract cause list date from     │
-                                              │ <span id="ctl00_MainContent_       │
-                                              │ lblHeader">                         │
-                                              └─────────────────────────────────────┘
-                                                                 │
-                                                                 ▼
-                                              ┌─────────────────────────────────────┐
-                                              │ Is cause list date > today?         │
-                                              └─────────────────────────────────────┘
-                                                                 │
-                                        ┌────────────────────────┴────────────────────────┐
-                                        │ NO                                              │ YES
-                                        ▼                                                 ▼
-                        ┌───────────────────────────┐           ┌─────────────────────────────────┐
-                        │ ⏳ Cause list not ready   │           │ 📸 Capture full-page screenshot │
-                        │   Sleep 10 mins & retry   │           │ using Microlink API             │
-                        └───────────────────────────┘           └─────────────────────────────────┘
-                                                                             │
-                                                                             ▼
-                                                              ┌─────────────────────────────────┐
-                                                              │ 📤 Upload image to WhatsApp     │
-                                                              │ Cloud API                       │
-                                                              └─────────────────────────────────┘
-                                                                             │
-                                                                             ▼
-                                                              ┌─────────────────────────────────┐
-                                                              │ 📱 Send to all recipients       │
-                                                              │ with caption                    │
-                                                              └─────────────────────────────────┘
-                                                                             │
-                                                                             ▼
-                                                              ┌─────────────────────────────────┐
-                                                              │ 📝 Mark message as sent today   │
-                                                              │ (cache/sent_today.txt)          │
-                                                              └─────────────────────────────────┘
-                                                                             │
-                                                                             ▼
-                                                              ┌─────────────────────────────────┐
-                                                              │ 🗑️ Delete temporary screenshot  │
-                                                              │ 🎉 Success! Wait for next day   │
-                                                              └─────────────────────────────────┘
-```
+- **Automatic Date Detection** - Extracts cause list date directly from the court website
+- **Screenshot Capture** - Takes full-page screenshots using Microlink API
+- **WhatsApp Integration** - Sends screenshots via WhatsApp Business Cloud API
+- **Scheduled Execution** - Runs between 9:30 PM - 11:30 PM, checking every 10 minutes
+- **Duplicate Prevention** - Tracks sent messages to avoid sending multiple times per day
+- **Multiple Recipients** - Supports sending to multiple WhatsApp numbers
 
 ---
 
-## 🛠️ Installation
+## Flow Diagram
+
+```
++-----------------------------------------------------------------------------+
+|                           SCHEDULER LOOP                                     |
+|                    (Runs continuously every 10 minutes)                      |
++-----------------------------------------------------------------------------+
+                                     |
+                                     v
+                    +--------------------------------+
+                    |   Is current time between      |
+                    |   9:30 PM and 11:30 PM?        |
+                    +--------------------------------+
+                                     |
+                    +----------------+----------------+
+                    | NO                              | YES
+                    v                                 v
+        +-------------------+           +----------------------------+
+        | Sleep 10 mins     |           | Was message already sent   |
+        | & retry           |           | today?                     |
+        +-------------------+           +----------------------------+
+                                                     |
+                                    +----------------+----------------+
+                                    | YES                             | NO
+                                    v                                 v
+                        +-------------------+       +-----------------------------+
+                        | Skip - already    |       | Fetch webpage from          |
+                        | sent today        |       | Patna High Court            |
+                        +-------------------+       +-----------------------------+
+                                                                 |
+                                                                 v
+                                              +-------------------------------------+
+                                              | Extract cause list date from       |
+                                              | <span id="ctl00_MainContent_       |
+                                              | lblHeader">                         |
+                                              +-------------------------------------+
+                                                                 |
+                                                                 v
+                                              +-------------------------------------+
+                                              | Is cause list date > today?         |
+                                              +-------------------------------------+
+                                                                 |
+                                        +------------------------+------------------------+
+                                        | NO                                              | YES
+                                        v                                                 v
+                        +---------------------------+           +---------------------------------+
+                        | Cause list not ready      |           | Capture full-page screenshot    |
+                        | Sleep 10 mins & retry     |           | using Microlink API             |
+                        +---------------------------+           +---------------------------------+
+                                                                             |
+                                                                             v
+                                                              +---------------------------------+
+                                                              | Upload image to WhatsApp        |
+                                                              | Cloud API                       |
+                                                              +---------------------------------+
+                                                                             |
+                                                                             v
+                                                              +---------------------------------+
+                                                              | Send to all recipients          |
+                                                              | with caption                    |
+                                                              +---------------------------------+
+                                                                             |
+                                                                             v
+                                                              +---------------------------------+
+                                                              | Mark message as sent today      |
+                                                              | (cache/sent_today.txt)          |
+                                                              +---------------------------------+
+                                                                             |
+                                                                             v
+                                                              +---------------------------------+
+                                                              | Delete temporary screenshot     |
+                                                              | Success! Wait for next day      |
+                                                              +---------------------------------+
+```
+
+---
+
+## Installation
 
 ### Prerequisites
 
@@ -127,7 +127,7 @@ An automated system that monitors the Patna High Court website for new cause lis
 
 ---
 
-## 🚀 Usage
+## Usage
 
 ### Run Scheduler (Recommended)
 
@@ -147,7 +147,7 @@ uv run main.py --once
 
 ---
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
 ### Build and Run
 
@@ -173,11 +173,11 @@ docker compose down
 | Memory Limit | 128MB |
 | CPU Limit | 0.25 cores |
 | Auto-restart | Yes (unless-stopped) |
-| Log Rotation | 10MB × 3 files |
+| Log Rotation | 10MB x 3 files |
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 screenshot_sending/
@@ -196,7 +196,7 @@ screenshot_sending/
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Time Window
 
@@ -224,7 +224,7 @@ TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
 
 ---
 
-## 🔧 How It Works
+## How It Works
 
 ### 1. Date Extraction
 
@@ -252,7 +252,7 @@ After successful send, writes today's date to `cache/sent_today.txt`. On next ch
 
 ---
 
-## 📋 Dependencies
+## Dependencies
 
 | Package | Purpose |
 |---------|---------|
@@ -262,7 +262,7 @@ After successful send, writes today's date to `cache/sent_today.txt`. On next ch
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "Could not extract date from webpage"
 
@@ -283,12 +283,12 @@ After successful send, writes today's date to `cache/sent_today.txt`. On next ch
 
 ---
 
-## 📜 License
+## License
 
 MIT License
 
 ---
 
-## 👤 Author
+## Author
 
 Created for automated court cause list monitoring.

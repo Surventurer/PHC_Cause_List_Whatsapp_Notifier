@@ -29,7 +29,7 @@ class ScreenshotManager:
     def fetch_screenshot(self):
         """Fetch screenshot from API and save to cache folder"""
         try:
-            print("🌐 Fetching screenshot from API...")
+            print("[INFO] Fetching screenshot from API...")
             response = requests.get(self.api_url, params={
                 "url": self.target_url,
                 "screenshot.fullPage": "true",
@@ -45,10 +45,10 @@ class ScreenshotManager:
             with open(self.screenshot_path, "wb") as f:
                 f.write(image_bytes)
             
-            print(f"💾 Screenshot saved to: {self.screenshot_path} ({len(image_bytes)} bytes)")
+            print(f"[OK] Screenshot saved to: {self.screenshot_path} ({len(image_bytes)} bytes)")
             return True
         except Exception as e:
-            print(f"❌ Failed to fetch screenshot: {e}")
+            print(f"[ERROR] Failed to fetch screenshot: {e}")
             return False
     
     def get_screenshot(self):
@@ -60,7 +60,7 @@ class ScreenshotManager:
     def extract_date_from_webpage(self):
         """Extract cause list date from the webpage content"""
         try:
-            print("🔍 Fetching webpage to extract cause list date...")
+            print("[INFO] Fetching webpage to extract cause list date...")
             response = requests.get(self.target_url, timeout=10)
             response.raise_for_status()
             
@@ -71,7 +71,7 @@ class ScreenshotManager:
             header_element = soup.find(id='ctl00_MainContent_lblHeader')
             if header_element:
                 header_text = header_element.get_text(strip=True)
-                print(f"🔍 Found header element: {header_text}")
+                print(f"[INFO] Found header element: {header_text}")
                 
                 # Extract date from "Cause List for DD-MM-YYYY" format
                 date_match = re.search(r'(\d{1,2}[-/]\d{1,2}[-/]\d{4})', header_text)
@@ -80,7 +80,7 @@ class ScreenshotManager:
                     for date_format in ['%d-%m-%Y', '%d/%m/%Y']:
                         try:
                             extracted_date = datetime.strptime(date_str, date_format)
-                            print(f"✅ Extracted date from header: {extracted_date.strftime('%d-%m-%Y')}")
+                            print(f"[OK] Extracted date from header: {extracted_date.strftime('%d-%m-%Y')}")
                             return extracted_date
                         except ValueError:
                             continue
@@ -105,7 +105,7 @@ class ScreenshotManager:
                                 # Return dates within a reasonable range (60 days past to 30 days future)
                                 days_diff = (extracted_date - datetime.now()).days
                                 if -60 <= days_diff <= 30:
-                                    print(f"✅ Extracted date from webpage: {extracted_date.strftime('%d-%m-%Y')}")
+                                    print(f"[OK] Extracted date from webpage: {extracted_date.strftime('%d-%m-%Y')}")
                                     return extracted_date
                             except ValueError:
                                 continue
@@ -124,16 +124,16 @@ class ScreenshotManager:
                                 extracted_date = datetime.strptime(match, date_format)
                                 days_diff = (extracted_date - datetime.now()).days
                                 if -60 <= days_diff <= 30:
-                                    print(f"✅ Extracted date from webpage element: {extracted_date.strftime('%d-%m-%Y')}")
+                                    print(f"[OK] Extracted date from webpage element: {extracted_date.strftime('%d-%m-%Y')}")
                                     return extracted_date
                             except ValueError:
                                 continue
             
-            print("⚠️  Could not extract date from webpage")
+            print("[WARN] Could not extract date from webpage")
             return None
             
         except Exception as e:
-            print(f"⚠️  Failed to extract date from webpage: {e}")
+            print(f"[WARN] Failed to extract date from webpage: {e}")
             return None
 
 
@@ -167,11 +167,11 @@ class WhatsAppManager:
             response.raise_for_status()
             
             media_id = response.json().get("id")
-            print(f"✅ Media uploaded successfully! Media ID: {media_id}")
+            print(f"[OK] Media uploaded successfully! Media ID: {media_id}")
             return media_id
             
         except requests.exceptions.RequestException as e:
-            print(f"❌ Media upload failed: {e}")
+            print(f"[ERROR] Media upload failed: {e}")
             if hasattr(e.response, 'text'):
                 print(f"Error details: {e.response.text}")
             return None
@@ -202,11 +202,11 @@ class WhatsAppManager:
             
             result = response.json()
             message_id = result.get("messages", [{}])[0].get("id")
-            print(f"✅ WhatsApp message sent successfully! Message ID: {message_id}")
+            print(f"[OK] WhatsApp message sent successfully! Message ID: {message_id}")
             return True
             
         except requests.exceptions.RequestException as e:
-            print(f"❌ Failed to send WhatsApp message: {e}")
+            print(f"[ERROR] Failed to send WhatsApp message: {e}")
             if hasattr(e.response, 'text'):
                 print(f"Error details: {e.response.text}")
             return False
@@ -234,24 +234,24 @@ class WhatsAppManager:
         try:
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
-            print(f"✅ Text message sent successfully!")
+            print(f"[OK] Text message sent successfully!")
             return True
             
         except requests.exceptions.RequestException as e:
-            print(f"❌ Failed to send text message: {e}")
+            print(f"[ERROR] Failed to send text message: {e}")
             if hasattr(e.response, 'text'):
                 print(f"Error details: {e.response.text}")
             return False
     
-    def send_screenshot(self, image_path, recipient_number, caption="📋 Court Cause List Screenshot"):
+    def send_screenshot(self, image_path, recipient_number, caption="Court Cause List Screenshot"):
         """Complete workflow: Upload media and send via WhatsApp"""
-        print("📤 Uploading image to WhatsApp...")
+        print("[INFO] Uploading image to WhatsApp...")
         media_id = self.upload_media(image_path)
         
         if not media_id:
             return False
         
-        print(f"📱 Sending to WhatsApp number: {recipient_number}")
+        print(f"[INFO] Sending to WhatsApp number: {recipient_number}")
         return self.send_image(recipient_number, media_id, caption)
     
     def send_to_multiple(self, image_path, recipient_numbers, caption="", delay_seconds=2):
@@ -307,7 +307,7 @@ def mark_message_sent():
     marker_file = get_sent_marker_file()
     with open(marker_file, 'w') as f:
         f.write(datetime.now().strftime('%Y-%m-%d'))
-    print("📝 Marked message as sent for today")
+    print("[INFO] Marked message as sent for today")
 
 
 def send_cause_list():
@@ -325,7 +325,7 @@ def send_cause_list():
     
     # Validate environment variables
     if not PHONE_NUMBER_ID or not ACCESS_TOKEN or not RECIPIENT_NUMBERS_STR:
-        raise ValueError("❌ Missing required environment variables. Please check your .env file.")
+        raise ValueError("[ERROR] Missing required environment variables. Please check your .env file.")
     
     # Parse multiple recipient numbers (comma-separated)
     recipient_numbers = [num.strip() for num in RECIPIENT_NUMBERS_STR.split(',')]
@@ -341,18 +341,18 @@ def send_cause_list():
     
     # If no date found, skip
     if not cause_list_date:
-        print("❌ Could not determine cause list date")
+        print("[ERROR] Could not determine cause list date")
         return False
     
     # Check if cause list date is greater than today
     if cause_list_date.date() <= today.date():
-        print(f"⏸️  Cause list date ({cause_list_date.strftime('%d-%m-%Y')}) is not greater than today ({today.strftime('%d-%m-%Y')})")
+        print(f"[SKIP] Cause list date ({cause_list_date.strftime('%d-%m-%Y')}) is not greater than today ({today.strftime('%d-%m-%Y')})")
         return False
     
     print("=" * 50)
-    print("📋 Court Cause List Screenshot to WhatsApp")
-    print(f"📅 Today: {today.strftime('%A, %d-%m-%Y')}")
-    print(f"📋 Cause List Date: {cause_list_date.strftime('%A, %d-%m-%Y')}")
+    print("Court Cause List Screenshot to WhatsApp")
+    print(f"Today: {today.strftime('%A, %d-%m-%Y')}")
+    print(f"Cause List Date: {cause_list_date.strftime('%A, %d-%m-%Y')}")
     print("=" * 50)
     
     # Initialize WhatsApp manager
@@ -364,14 +364,14 @@ def send_cause_list():
     # Get screenshot
     screenshot_path = screenshot_manager.get_screenshot()
     if not screenshot_path:
-        print("❌ Failed to get screenshot")
+        print("[ERROR] Failed to get screenshot")
         return False
     
-    print(f"📁 Cached file: {screenshot_path}")
+    print(f"[INFO] Cached file: {screenshot_path}")
     
     # Send via WhatsApp
     print("\n" + "=" * 50)
-    print(f"📱 Sending to {len(recipient_numbers)} recipient(s)...")
+    print(f"[INFO] Sending to {len(recipient_numbers)} recipient(s)...")
     print("=" * 50)
     
     caption = f"Patna High Court Cause List\n{cause_list_date.strftime('%d-%m-%Y')}"
@@ -386,12 +386,12 @@ def send_cause_list():
     # Clean up temp file after sending
     if os.path.exists(screenshot_path):
         os.remove(screenshot_path)
-        print(f"🗑️  Temp file deleted: {screenshot_path}")
+        print(f"[INFO] Temp file deleted: {screenshot_path}")
     
     print("\n" + "=" * 50)
-    print(f"✅ Successfully sent: {successful_sends}/{len(recipient_numbers)}")
+    print(f"[OK] Successfully sent: {successful_sends}/{len(recipient_numbers)}")
     if failed_sends > 0:
-        print(f"❌ Failed sends: {failed_sends}/{len(recipient_numbers)}")
+        print(f"[ERROR] Failed sends: {failed_sends}/{len(recipient_numbers)}")
     print("=" * 50)
     
     return successful_sends > 0
@@ -403,9 +403,9 @@ def run_scheduler():
     Sends WhatsApp message when cause list date is greater than today.
     """
     print("=" * 50)
-    print("🕐 Cause List Scheduler Started")
-    print("⏰ Active window: 9:30 PM - 11:30 PM")
-    print("🔄 Check interval: Every 10 minutes")
+    print("Cause List Scheduler Started")
+    print("Active window: 9:30 PM - 11:30 PM")
+    print("Check interval: Every 10 minutes")
     print("=" * 50)
     
     CHECK_INTERVAL_SECONDS = 10 * 60  # 10 minutes
@@ -415,30 +415,30 @@ def run_scheduler():
         
         # Check if within time window (9:30 PM to 11:30 PM)
         if not is_within_time_window():
-            print(f"\n[{now.strftime('%H:%M:%S')}] ⏸️  Outside active window (9:30 PM - 11:30 PM)")
-            print("💤 Waiting for next check...")
+            print(f"\n[{now.strftime('%H:%M:%S')}] [SKIP] Outside active window (9:30 PM - 11:30 PM)")
+            print("[INFO] Waiting for next check...")
             time.sleep(CHECK_INTERVAL_SECONDS)
             continue
         
         # Check if message was already sent today
         if was_message_sent_today():
-            print(f"\n[{now.strftime('%H:%M:%S')}] ✅ Message already sent today - Skipping")
+            print(f"\n[{now.strftime('%H:%M:%S')}] [OK] Message already sent today - Skipping")
             time.sleep(CHECK_INTERVAL_SECONDS)
             continue
         
-        print(f"\n[{now.strftime('%H:%M:%S')}] 🔍 Checking cause list...")
+        print(f"\n[{now.strftime('%H:%M:%S')}] [INFO] Checking cause list...")
         
         try:
             # Try to send cause list
             if send_cause_list():
                 mark_message_sent()
-                print("🎉 Message sent successfully! Will resume checking tomorrow.")
+                print("[OK] Message sent successfully! Will resume checking tomorrow.")
             else:
-                print("⏳ Cause list not ready yet. Will check again in 10 minutes.")
+                print("[INFO] Cause list not ready yet. Will check again in 10 minutes.")
         except Exception as e:
-            print(f"❌ Error during execution: {e}")
+            print(f"[ERROR] Error during execution: {e}")
         
-        print(f"⏰ Next check in 10 minutes...")
+        print(f"[INFO] Next check in 10 minutes...")
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 
@@ -448,13 +448,13 @@ def main():
     
     # Check for --once flag to run just once (for testing or cron)
     if len(sys.argv) > 1 and sys.argv[1] == "--once":
-        print("🔄 Running in single execution mode...")
+        print("[INFO] Running in single execution mode...")
         load_dotenv()
         
         if send_cause_list():
-            print("✅ Message sent successfully!")
+            print("[OK] Message sent successfully!")
         else:
-            print("❌ Failed to send message or conditions not met")
+            print("[ERROR] Failed to send message or conditions not met")
     else:
         # Run the scheduler
         run_scheduler()
