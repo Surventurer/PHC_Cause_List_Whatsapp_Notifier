@@ -147,11 +147,43 @@ uv run main.py --once
 
 ---
 
+## 🐳 Docker Deployment
+
+### Build and Run
+
+```bash
+# Build the image
+docker compose build
+
+# Run in background
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+### Docker Features
+
+| Feature | Value |
+|---------|-------|
+| Base Image | `python:3.12-alpine` (~50MB) |
+| Memory Limit | 128MB |
+| CPU Limit | 0.25 cores |
+| Auto-restart | Yes (unless-stopped) |
+| Log Rotation | 10MB × 3 files |
+
+---
+
 ## 📁 Project Structure
 
 ```
 screenshot_sending/
 ├── main.py              # Main application code
+├── Dockerfile           # Docker image definition
+├── docker-compose.yml   # Docker Compose configuration
 ├── .env                 # Environment variables (not in git)
 ├── .gitignore           # Git ignore rules
 ├── pyproject.toml       # Python project configuration
