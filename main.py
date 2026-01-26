@@ -1,9 +1,8 @@
 import requests
 import os
-import json
 import time
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -67,8 +66,26 @@ class ScreenshotManager:
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Common patterns to look for dates in cause list pages
-            # Pattern 1: Look for date in text content
+            # First, try to find the specific element with ID that contains the cause list date
+            # The Patna High Court page has: <span id="ctl00_MainContent_lblHeader">Cause List for DD-MM-YYYY</span>
+            header_element = soup.find(id='ctl00_MainContent_lblHeader')
+            if header_element:
+                header_text = header_element.get_text(strip=True)
+                print(f"🔍 Found header element: {header_text}")
+                
+                # Extract date from "Cause List for DD-MM-YYYY" format
+                date_match = re.search(r'(\d{1,2}[-/]\d{1,2}[-/]\d{4})', header_text)
+                if date_match:
+                    date_str = date_match.group(1)
+                    for date_format in ['%d-%m-%Y', '%d/%m/%Y']:
+                        try:
+                            extracted_date = datetime.strptime(date_str, date_format)
+                            print(f"✅ Extracted date from header: {extracted_date.strftime('%d-%m-%Y')}")
+                            return extracted_date
+                        except ValueError:
+                            continue
+            
+            # Fallback: Look for date in general text content
             text_content = soup.get_text()
             
             # Pattern: DD-MM-YYYY or DD/MM/YYYY
@@ -85,16 +102,15 @@ class ScreenshotManager:
                         for date_format in ['%d-%m-%Y', '%d/%m/%Y', '%d %B %Y', '%d %b %Y']:
                             try:
                                 extracted_date = datetime.strptime(match, date_format)
-                                # Only return dates that are reasonable (within 30 days from now)
+                                # Return dates within a reasonable range (60 days past to 30 days future)
                                 days_diff = (extracted_date - datetime.now()).days
-                                if -7 <= days_diff <= 30:
+                                if -60 <= days_diff <= 30:
                                     print(f"✅ Extracted date from webpage: {extracted_date.strftime('%d-%m-%Y')}")
                                     return extracted_date
                             except ValueError:
                                 continue
             
             # If no date found in standard formats, look in specific HTML elements
-            # Look for common class names or IDs that might contain dates
             date_elements = soup.find_all(['h1', 'h2', 'h3', 'h4', 'div', 'span', 'td'], 
                                          string=re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{4}'))
             
@@ -107,7 +123,7 @@ class ScreenshotManager:
                             try:
                                 extracted_date = datetime.strptime(match, date_format)
                                 days_diff = (extracted_date - datetime.now()).days
-                                if -7 <= days_diff <= 30:
+                                if -60 <= days_diff <= 30:
                                     print(f"✅ Extracted date from webpage element: {extracted_date.strftime('%d-%m-%Y')}")
                                     return extracted_date
                             except ValueError:
@@ -259,25 +275,53 @@ class WhatsAppManager:
         return successful_sends, failed_sends
 
 
-def main():
-    """Main execution function"""
+def is_within_time_window(start_hour=21, start_minute=30, end_hour=23, end_minute=30):
+    """Check if current time is within the specified time window (9:30 PM to 11:30 PM)"""
+    now = datetime.now()
+    current_minutes = now.hour * 60 + now.minute
+    start_minutes = start_hour * 60 + start_minute
+    end_minutes = end_hour * 60 + end_minute
+    return start_minutes <= current_minutes <= end_minutes
+
+
+def get_sent_marker_file():
+    """Get the path to the marker file that tracks if message was sent today"""
+    cache_dir = "cache"
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, "sent_today.txt")
+
+
+def was_message_sent_today():
+    """Check if message was already sent today"""
+    marker_file = get_sent_marker_file()
+    if os.path.exists(marker_file):
+        with open(marker_file, 'r') as f:
+            sent_date = f.read().strip()
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            return sent_date == today_str
+    return False
+
+
+def mark_message_sent():
+    """Mark that message was sent today"""
+    marker_file = get_sent_marker_file()
+    with open(marker_file, 'w') as f:
+        f.write(datetime.now().strftime('%Y-%m-%d'))
+    print("📝 Marked message as sent for today")
+
+
+def send_cause_list():
+    """Send cause list screenshot via WhatsApp - returns True if sent successfully"""
     # Load environment variables
     load_dotenv()
     
-    # Check if today is Sunday (weekday 6 = Sunday)
     today = datetime.now()
-    if today.weekday() == 6:
-        print("=" * 50)
-        print("⏸️  Skipping execution - Today is Sunday")
-        print("=" * 50)
-        return
     
     # Configuration
     TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
     PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
     ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
     RECIPIENT_NUMBERS_STR = os.getenv("RECIPIENT_NUMBER")
-    #CAUSE_LIST_DATE_STR = os.getenv("CAUSE_LIST_DATE")  # Optional: manual override date in DD-MM-YYYY format
     
     # Validate environment variables
     if not PHONE_NUMBER_ID or not ACCESS_TOKEN or not RECIPIENT_NUMBERS_STR:
@@ -286,7 +330,7 @@ def main():
     # Parse multiple recipient numbers (comma-separated)
     recipient_numbers = [num.strip() for num in RECIPIENT_NUMBERS_STR.split(',')]
     
-    # Initialize screenshot manager early to extract date
+    # Initialize screenshot manager
     screenshot_manager = ScreenshotManager(
         target_url=TARGET_URL,
         cache_dir="cache"
@@ -295,28 +339,20 @@ def main():
     # Extract cause list date from webpage automatically
     cause_list_date = screenshot_manager.extract_date_from_webpage()
     
-    # If no date found, skip execution
+    # If no date found, skip
     if not cause_list_date:
-        print("=" * 50)
-        print("❌ Skipping execution - Could not determine cause list date")
-        print("💡 The date should be automatically extracted from the webpage")
-        print("💡 Or set CAUSE_LIST_DATE in .env file (format: DD-MM-YYYY)")
-        print("=" * 50)
-        return
+        print("❌ Could not determine cause list date")
+        return False
     
-    # Validate that cause list date is in the future
+    # Check if cause list date is greater than today
     if cause_list_date.date() <= today.date():
-        print("=" * 50)
-        print(f"⏸️  Skipping execution - Cause list date ({cause_list_date.strftime('%d-%m-%Y')}) is not in the future")
-        print(f"📅 Today: {today.strftime('%d-%m-%Y')}")
-        print("=" * 50)
-        return
+        print(f"⏸️  Cause list date ({cause_list_date.strftime('%d-%m-%Y')}) is not greater than today ({today.strftime('%d-%m-%Y')})")
+        return False
     
     print("=" * 50)
     print("📋 Court Cause List Screenshot to WhatsApp")
-    print(f"� Today: {today.strftime('%A, %d-%m-%Y')}")
-    if cause_list_date:
-        print(f"📋 Cause List Date: {cause_list_date.strftime('%A, %d-%m-%Y')}")
+    print(f"📅 Today: {today.strftime('%A, %d-%m-%Y')}")
+    print(f"📋 Cause List Date: {cause_list_date.strftime('%A, %d-%m-%Y')}")
     print("=" * 50)
     
     # Initialize WhatsApp manager
@@ -329,7 +365,7 @@ def main():
     screenshot_path = screenshot_manager.get_screenshot()
     if not screenshot_path:
         print("❌ Failed to get screenshot")
-        return
+        return False
     
     print(f"📁 Cached file: {screenshot_path}")
     
@@ -338,11 +374,7 @@ def main():
     print(f"📱 Sending to {len(recipient_numbers)} recipient(s)...")
     print("=" * 50)
     
-    # Prepare caption with appropriate date
-    if cause_list_date:
-        caption = f"Patna High Court Cause List\n{cause_list_date.strftime('%d-%m-%Y')}"
-    else:
-        caption = f"Patna High Court Cause List\n{time.strftime('%d-%m-%Y')}"
+    caption = f"Patna High Court Cause List\n{cause_list_date.strftime('%d-%m-%Y')}"
     
     successful_sends, failed_sends = whatsapp_manager.send_to_multiple(
         screenshot_path,
@@ -361,6 +393,71 @@ def main():
     if failed_sends > 0:
         print(f"❌ Failed sends: {failed_sends}/{len(recipient_numbers)}")
     print("=" * 50)
+    
+    return successful_sends > 0
+
+
+def run_scheduler():
+    """
+    Run the scheduler that checks every 10 minutes between 9:30 PM and 11:30 PM.
+    Sends WhatsApp message when cause list date is greater than today.
+    """
+    print("=" * 50)
+    print("🕐 Cause List Scheduler Started")
+    print("⏰ Active window: 9:30 PM - 11:30 PM")
+    print("🔄 Check interval: Every 10 minutes")
+    print("=" * 50)
+    
+    CHECK_INTERVAL_SECONDS = 10 * 60  # 10 minutes
+    
+    while True:
+        now = datetime.now()
+        
+        # Check if within time window (9:30 PM to 11:30 PM)
+        if not is_within_time_window():
+            print(f"\n[{now.strftime('%H:%M:%S')}] ⏸️  Outside active window (9:30 PM - 11:30 PM)")
+            print("💤 Waiting for next check...")
+            time.sleep(CHECK_INTERVAL_SECONDS)
+            continue
+        
+        # Check if message was already sent today
+        if was_message_sent_today():
+            print(f"\n[{now.strftime('%H:%M:%S')}] ✅ Message already sent today - Skipping")
+            time.sleep(CHECK_INTERVAL_SECONDS)
+            continue
+        
+        print(f"\n[{now.strftime('%H:%M:%S')}] 🔍 Checking cause list...")
+        
+        try:
+            # Try to send cause list
+            if send_cause_list():
+                mark_message_sent()
+                print("🎉 Message sent successfully! Will resume checking tomorrow.")
+            else:
+                print("⏳ Cause list not ready yet. Will check again in 10 minutes.")
+        except Exception as e:
+            print(f"❌ Error during execution: {e}")
+        
+        print(f"⏰ Next check in 10 minutes...")
+        time.sleep(CHECK_INTERVAL_SECONDS)
+
+
+def main():
+    """Main execution function - runs in scheduler mode"""
+    import sys
+    
+    # Check for --once flag to run just once (for testing or cron)
+    if len(sys.argv) > 1 and sys.argv[1] == "--once":
+        print("🔄 Running in single execution mode...")
+        load_dotenv()
+        
+        if send_cause_list():
+            print("✅ Message sent successfully!")
+        else:
+            print("❌ Failed to send message or conditions not met")
+    else:
+        # Run the scheduler
+        run_scheduler()
 
 
 if __name__ == "__main__":
