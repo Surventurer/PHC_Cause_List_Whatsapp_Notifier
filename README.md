@@ -16,76 +16,81 @@ An automated system that monitors the Patna High Court website for new cause lis
 ## Flow Diagram
 
 ```
-+-----------------------------------------------------------------------------+
-|                           SCHEDULER LOOP                                     |
-|                    (Runs continuously every 10 minutes)                      |
-+-----------------------------------------------------------------------------+
-                                     |
-                                     v
-                    +--------------------------------+
-                    |   Is current time between      |
-                    |   9:30 PM and 11:30 PM?        |
-                    +--------------------------------+
-                                     |
-                    +----------------+----------------+
-                    | NO                              | YES
-                    v                                 v
-        +-------------------+           +----------------------------+
-        | Sleep 10 mins     |           | Was message already sent   |
-        | & retry           |           | today?                     |
-        +-------------------+           +----------------------------+
-                                                     |
-                                    +----------------+----------------+
-                                    | YES                             | NO
-                                    v                                 v
-                        +-------------------+       +-----------------------------+
-                        | Skip - already    |       | Fetch webpage from          |
-                        | sent today        |       | Patna High Court            |
-                        +-------------------+       +-----------------------------+
-                                                                 |
-                                                                 v
-                                              +-------------------------------------+
-                                              | Extract cause list date from       |
-                                              | <span id="ctl00_MainContent_       |
-                                              | lblHeader">                         |
-                                              +-------------------------------------+
-                                                                 |
-                                                                 v
-                                              +-------------------------------------+
-                                              | Is cause list date > today?         |
-                                              +-------------------------------------+
-                                                                 |
-                                        +------------------------+------------------------+
-                                        | NO                                              | YES
-                                        v                                                 v
-                        +---------------------------+           +---------------------------------+
-                        | Cause list not ready      |           | Capture full-page screenshot    |
-                        | Sleep 10 mins & retry     |           | using Microlink API             |
-                        +---------------------------+           +---------------------------------+
-                                                                             |
-                                                                             v
-                                                              +---------------------------------+
-                                                              | Upload image to WhatsApp        |
-                                                              | Cloud API                       |
-                                                              +---------------------------------+
-                                                                             |
-                                                                             v
-                                                              +---------------------------------+
-                                                              | Send to all recipients          |
-                                                              | with caption                    |
-                                                              +---------------------------------+
-                                                                             |
-                                                                             v
-                                                              +---------------------------------+
-                                                              | Mark message as sent today      |
-                                                              | (cache/sent_today.txt)          |
-                                                              +---------------------------------+
-                                                                             |
-                                                                             v
-                                                              +---------------------------------+
-                                                              | Delete temporary screenshot     |
-                                                              | Success! Wait for next day      |
-                                                              +---------------------------------+
+                      +---------------------------------------+
+                      |          SCHEDULER LOOP               |
+                      |  (Runs continuously every 10 minutes) |
+                      +---------------------------------------+
+                                        |
+                                        v
+                      +---------------------------------------+
+                      | Is current time between               |
+                      | 9:30 PM and 11:30 PM?                 |
+                      +---------------------------------------+
+                              |                    |
+                             NO                   YES
+                              |                    |
+                              v                    v
+                      +---------------+   +------------------------+
+                      | Sleep 10 mins |   | Was message already    |
+                      | & retry       |   | sent today?            |
+                      +---------------+   +------------------------+
+                                                |            |
+                                               YES          NO
+                                                |            |
+                                                v            v
+                                      +----------+   +---------------------+
+                                      | Skip -   |   | Fetch webpage from  |
+                                      | already  |   | Patna High Court    |
+                                      | sent     |   +---------------------+
+                                      +----------+            |
+                                                              v
+                                                +---------------------------+
+                                                | Extract cause list date   |
+                                                | from lblHeader element    |
+                                                +---------------------------+
+                                                              |
+                                                              v
+                                                +---------------------------+
+                                                | Is cause list date        |
+                                                | greater than today?       |
+                                                +---------------------------+
+                                                        |           |
+                                                       NO          YES
+                                                        |           |
+                                                        v           v
+                                            +-----------+   +---------------------+
+                                            | Cause list|   | Capture full-page   |
+                                            | not ready |   | screenshot using    |
+                                            | Sleep 10  |   | Microlink API       |
+                                            | mins &    |   +---------------------+
+                                            | retry     |            |
+                                            +-----------+            v
+                                                          +---------------------+
+                                                          | Upload image to     |
+                                                          | WhatsApp Cloud API  |
+                                                          +---------------------+
+                                                                     |
+                                                                     v
+                                                          +---------------------+
+                                                          | Send to all         |
+                                                          | recipients with     |
+                                                          | caption             |
+                                                          +---------------------+
+                                                                     |
+                                                                     v
+                                                          +---------------------+
+                                                          | Mark message as     |
+                                                          | sent today          |
+                                                          | (sent_today.txt)    |
+                                                          +---------------------+
+                                                                     |
+                                                                     v
+                                                          +---------------------+
+                                                          | Delete temporary    |
+                                                          | screenshot          |
+                                                          | Success! Wait for   |
+                                                          | next day            |
+                                                          +---------------------+
 ```
 
 ---
@@ -102,8 +107,8 @@ An automated system that monitors the Patna High Court website for new cause lis
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd screenshot_sending
+   git clone https://github.com/Surventurer/PHC_Cause_List_Whatsapp_Notifier.git
+   cd PHC_Cause_List_Whatsapp_Notifier
    ```
 
 2. **Install dependencies**
@@ -180,7 +185,7 @@ docker compose down
 ## Project Structure
 
 ```
-screenshot_sending/
+PHC_Cause_List_Whatsapp_Notifier/
 ├── main.py              # Main application code
 ├── Dockerfile           # Docker image definition
 ├── docker-compose.yml   # Docker Compose configuration
