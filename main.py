@@ -275,8 +275,8 @@ class WhatsAppManager:
         return successful_sends, failed_sends
 
 
-def is_within_time_window(start_hour=21, start_minute=30, end_hour=23, end_minute=30):
-    """Check if current time is within the specified time window (9:30 PM to 11:30 PM)"""
+def is_within_time_window(start_hour=21, start_minute=0, end_hour=23, end_minute=30):
+    """Check if current time is within the specified time window (9:00 PM to 11:30 PM)"""
     now = datetime.now()
     current_minutes = now.hour * 60 + now.minute
     start_minutes = start_hour * 60 + start_minute
