@@ -33,7 +33,7 @@ class ScreenshotManager:
             response = requests.get(self.api_url, params={
                 "url": self.target_url,
                 "screenshot.fullPage": "true",
-                "screenshot.type": "png"
+                # "screenshot.type": "png"
             })
             response.raise_for_status()
             
@@ -275,8 +275,8 @@ class WhatsAppManager:
         return successful_sends, failed_sends
 
 
-def is_within_time_window(start_hour=21, start_minute=0, end_hour=23, end_minute=30):
-    """Check if current time is within the specified time window (9:00 PM to 11:30 PM IST)"""
+def is_within_time_window(start_hour=20, start_minute=0, end_hour=23, end_minute=30):
+    """Check if current time is within the specified time window (8:00 PM to 11:30 PM IST)"""
     now = datetime.now()
     current_minutes = now.hour * 60 + now.minute
     start_minutes = start_hour * 60 + start_minute
@@ -404,7 +404,7 @@ def run_scheduler():
     """
     print("=" * 50)
     print("Cause List Scheduler Started")
-    print("Active window: 9:00 PM - 11:30 PM IST")
+    print("Active window: 8:00 PM - 11:30 PM IST")
     print("Check interval: Every 10 minutes")
     print("=" * 50)
     
@@ -413,9 +413,9 @@ def run_scheduler():
     while True:
         now = datetime.now()
         
-        # Check if within time window (9:00 PM to 11:30 PM IST)
+        # Check if within time window (8:00 PM to 11:30 PM IST)
         if not is_within_time_window():
-            print(f"\n[{now.strftime('%H:%M:%S')}] [SKIP] Outside active window (9:00 PM - 11:30 PM IST)")
+            print(f"\n[{now.strftime('%H:%M:%S')}] [SKIP] Outside active window (8:00 PM - 11:30 PM IST)")
             print("[INFO] Waiting for next check...")
             time.sleep(CHECK_INTERVAL_SECONDS)
             continue

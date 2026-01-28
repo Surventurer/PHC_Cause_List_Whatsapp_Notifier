@@ -7,7 +7,7 @@ An automated system that monitors the Patna High Court website for new cause lis
 - **Automatic Date Detection** - Extracts cause list date directly from the court website
 - **Screenshot Capture** - Takes full-page screenshots using Microlink API
 - **WhatsApp Integration** - Sends screenshots via WhatsApp Business Cloud API
-- **Scheduled Execution** - Runs between 9:30 PM - 11:30 PM, checking every 10 minutes
+- **Scheduled Execution** - Runs between 8:00 PM - 11:30 PM, checking every 10 minutes
 - **Duplicate Prevention** - Tracks sent messages to avoid sending multiple times per day
 - **Multiple Recipients** - Supports sending to multiple WhatsApp numbers
 
@@ -24,7 +24,7 @@ An automated system that monitors the Patna High Court website for new cause lis
                                         v
                       +---------------------------------------+
                       | Is current time between               |
-                      | 9:30 PM and 11:30 PM?                 |
+                      | 8:00 PM and 11:30 PM?                 |
                       +---------------------------------------+
                               |                    |
                              NO                   YES
@@ -136,7 +136,7 @@ An automated system that monitors the Patna High Court website for new cause lis
 
 ### Run Scheduler (Recommended)
 
-Runs continuously, checking every 10 minutes between 9:30 PM - 11:30 PM:
+Runs continuously, checking every 10 minutes between 8:00 PM - 11:30 PM:
 
 ```bash
 uv run main.py
@@ -205,10 +205,10 @@ PHC_Cause_List_Whatsapp_Notifier/
 
 ### Time Window
 
-The scheduler is active between **9:30 PM** and **11:30 PM**. To modify, edit the `is_within_time_window()` function in `main.py`:
+The scheduler is active between **8:00 PM** and **11:30 PM**. To modify, edit the `is_within_time_window()` function in `main.py`:
 
 ```python
-def is_within_time_window(start_hour=21, start_minute=30, end_hour=23, end_minute=30):
+def is_within_time_window(start_hour=20, start_minute=0, end_hour=23, end_minute=30):
 ```
 
 ### Check Interval
