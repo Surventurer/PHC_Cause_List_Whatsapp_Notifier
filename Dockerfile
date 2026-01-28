@@ -4,6 +4,9 @@ FROM python:3.12-alpine
 # Set working directory
 WORKDIR /app
 
+# Set default timezone
+ENV TZ=Asia/Kolkata
+
 # Install tzdata for timezone support and uv for fast package management
 RUN apk add --no-cache tzdata && pip install --no-cache-dir uv
 

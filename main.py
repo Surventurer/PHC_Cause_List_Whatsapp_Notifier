@@ -3,8 +3,13 @@ import os
 import time
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+
+
+# Define India Standard Time
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class ScreenshotManager:
@@ -103,7 +108,8 @@ class ScreenshotManager:
                             try:
                                 extracted_date = datetime.strptime(match, date_format)
                                 # Return dates within a reasonable range (60 days past to 30 days future)
-                                days_diff = (extracted_date - datetime.now()).days
+                                # Use .date() for comparison to avoid timezone issues
+                                days_diff = (extracted_date.date() - datetime.now(IST).date()).days
                                 if -60 <= days_diff <= 30:
                                     print(f"[OK] Extracted date from webpage: {extracted_date.strftime('%d-%m-%Y')}")
                                     return extracted_date
@@ -122,7 +128,7 @@ class ScreenshotManager:
                         for date_format in ['%d-%m-%Y', '%d/%m/%Y']:
                             try:
                                 extracted_date = datetime.strptime(match, date_format)
-                                days_diff = (extracted_date - datetime.now()).days
+                                days_diff = (extracted_date.date() - datetime.now(IST).date()).days
                                 if -60 <= days_diff <= 30:
                                     print(f"[OK] Extracted date from webpage element: {extracted_date.strftime('%d-%m-%Y')}")
                                     return extracted_date
@@ -277,7 +283,7 @@ class WhatsAppManager:
 
 def is_within_time_window(start_hour=20, start_minute=0, end_hour=23, end_minute=30):
     """Check if current time is within the specified time window (8:00 PM to 11:30 PM IST)"""
-    now = datetime.now()
+    now = datetime.now(IST)
     current_minutes = now.hour * 60 + now.minute
     start_minutes = start_hour * 60 + start_minute
     end_minutes = end_hour * 60 + end_minute
@@ -297,7 +303,7 @@ def was_message_sent_today():
     if os.path.exists(marker_file):
         with open(marker_file, 'r') as f:
             sent_date = f.read().strip()
-            today_str = datetime.now().strftime('%Y-%m-%d')
+            today_str = datetime.now(IST).strftime('%Y-%m-%d')
             return sent_date == today_str
     return False
 
@@ -306,7 +312,7 @@ def mark_message_sent():
     """Mark that message was sent today"""
     marker_file = get_sent_marker_file()
     with open(marker_file, 'w') as f:
-        f.write(datetime.now().strftime('%Y-%m-%d'))
+        f.write(datetime.now(IST).strftime('%Y-%m-%d'))
     print("[INFO] Marked message as sent for today")
 
 
@@ -315,7 +321,7 @@ def send_cause_list():
     # Load environment variables
     load_dotenv()
     
-    today = datetime.now()
+    today = datetime.now(IST)
     
     # Configuration
     TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
@@ -410,8 +416,9 @@ def run_scheduler():
     
     CHECK_INTERVAL_SECONDS = 10 * 60  # 10 minutes
     
+    
     while True:
-        now = datetime.now()
+        now = datetime.now(IST)
         
         # Check if within time window (8:00 PM to 11:30 PM IST)
         if not is_within_time_window():
