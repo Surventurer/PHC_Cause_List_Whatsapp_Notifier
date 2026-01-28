@@ -5,17 +5,17 @@ services:
       dockerfile: Dockerfile
     container_name: causelist-whatsapp
     restart: unless-stopped
-    
+
     # Environment variables
     environment:
       - TZ=Asia/Kolkata
     env_file:
       - .env
-    
+
     # Volume for cache persistence (tracks sent messages)
     volumes:
-      - ./cache:/app/cache
-    
+      - app_cache:/app/cache
+
     # Resource limits for lightweight operation
     deploy:
       resources:
@@ -25,17 +25,20 @@ services:
         reservations:
           cpus: '0.1'
           memory: 64M
-    
+
     # Health check
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "main.py"]
+      test: [ "CMD", "pgrep", "-f", "main.py" ]
       interval: 5m
       timeout: 10s
       retries: 3
-    
+
     # Logging configuration
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  app_cache:
