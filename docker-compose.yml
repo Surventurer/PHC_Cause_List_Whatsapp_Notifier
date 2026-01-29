@@ -9,6 +9,7 @@ services:
     # Environment variables
     environment:
       - TZ=Asia/Kolkata
+      - SCREENSHOT_QUALITY=${SCREENSHOT_QUALITY:-HIGH}
     env_file:
       - .env
 
@@ -20,11 +21,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '1.0'
+          memory: 1024M
         reservations:
-          cpus: '0.1'
-          memory: 64M
+          cpus: '0.5'
+          memory: 512M
 
     # Health check
     healthcheck:

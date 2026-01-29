@@ -5,7 +5,7 @@ An automated system that monitors the Patna High Court website for new cause lis
 ## Features
 
 - **Automatic Date Detection** - Extracts cause list date directly from the court website
-- **Screenshot Capture** - Takes full-page screenshots using Microlink API
+- **Anti-Bot Screenshot Capture** - Uses **Camoufox (Stealth Firefox)** to bypass bot protections (Cloudflare, etc.) and capture full-page screenshots
 - **WhatsApp Integration** - Sends screenshots via WhatsApp Business Cloud API
 - **Scheduled Execution** - Runs between 8:00 PM - 11:30 PM, checking every 10 minutes
 - **Duplicate Prevention** - Tracks sent messages to avoid sending multiple times per day
@@ -61,7 +61,7 @@ An automated system that monitors the Patna High Court website for new cause lis
                                             +-----------+   +---------------------+
                                             | Cause list|   | Capture full-page   |
                                             | not ready |   | screenshot using    |
-                                            | Sleep 10  |   | Microlink API       |
+                                            | Sleep 10  |   | Camoufox (Stealth)  |
                                             | mins &    |   +---------------------+
                                             | retry     |            |
                                             +-----------+            v
@@ -99,9 +99,10 @@ An automated system that monitors the Patna High Court website for new cause lis
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.12+
 - [uv](https://github.com/astral-sh/uv) package manager
 - WhatsApp Business Cloud API access
+- Docker (for production deployment)
 
 ### Setup
 
@@ -114,6 +115,7 @@ An automated system that monitors the Patna High Court website for new cause lis
 2. **Install dependencies**
    ```bash
    uv sync
+   uv run playwright install --with-deps firefox
    ```
 
 3. **Configure environment variables**
@@ -157,7 +159,7 @@ uv run main.py --once
 ### Build and Run
 
 ```bash
-# Build the image
+# Build the image (Downloads Camoufox browser (~700MB) once into the image)
 docker compose build
 
 # Run in background
@@ -174,9 +176,10 @@ docker compose down
 
 | Feature | Value |
 |---------|-------|
-| Base Image | `python:3.12-alpine` (~50MB) |
-| Memory Limit | 128MB |
-| CPU Limit | 0.25 cores |
+| Base Image | `python:3.12-slim-bookworm` (Debian) |
+| Browser | Camoufox (Stealth Firefox) |
+| Memory Limit | 1024MB (Required for browser) |
+| CPU Limit | 1.0 cores |
 | Auto-restart | Yes (unless-stopped) |
 | Log Rotation | 10MB x 3 files |
 
@@ -194,6 +197,7 @@ PHC_Cause_List_Whatsapp_Notifier/
 ├── pyproject.toml       # Python project configuration
 ├── uv.lock              # Dependency lock file
 ├── README.md            # This file
+├── test.py              # Test script for screenshot verification
 └── cache/               # Temporary files
     ├── screenshot.png   # Cached screenshot (deleted after send)
     └── sent_today.txt   # Tracks if message was sent today
@@ -227,6 +231,21 @@ Default URL monitors cause list for advocate code 4079. To change, modify in `se
 TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
 ```
 
+### Screenshot Quality
+
+You can adjust the resolution and quality of the screenshot by setting the `SCREENSHOT_QUALITY` environment variable in your `.env` or `docker-compose.yml`.
+
+| Value | Resolution | Scale Factor | Description |
+|-------|------------|--------------|-------------|
+| `HIGH` (Default) | 1920x1080 | 2x | **Best Quality**. Retina-sharp text. Larger file size (~800KB). |
+| `MEDIUM` | 1280x720 | 1x | Good balance. Standard HD. (~400KB) |
+| `LOW` | 800x600 | 1x | Lowest file size (~250KB). Good for slow connections. |
+
+Example in `.env`:
+```env
+SCREENSHOT_QUALITY=HIGH
+```
+
 ---
 
 ## How It Works
@@ -240,10 +259,7 @@ The system fetches the court website and looks for the cause list date in:
 
 ### 2. Screenshot Capture
 
-Uses [Microlink API](https://microlink.io/) to capture a full-page screenshot:
-```
-https://api.microlink.io/?url=<target_url>&screenshot.fullPage=true
-```
+Uses **Camoufox** (a modified version of Playwright/Firefox) to capture a full-page screenshot. This ensures the request looks like a legitimate residential user using Firefox, bypassing anti-bot screens (Cloudflare, etc.) without external APIs.
 
 ### 3. WhatsApp Integration
 
@@ -264,27 +280,8 @@ After successful send, writes today's date to `cache/sent_today.txt`. On next ch
 | `requests` | HTTP requests for API calls |
 | `beautifulsoup4` | HTML parsing for date extraction |
 | `python-dotenv` | Environment variable management |
-
----
-
-## Troubleshooting
-
-### "Could not extract date from webpage"
-
-- The webpage structure may have changed
-- Check if `ctl00_MainContent_lblHeader` element exists
-- Verify the URL is accessible
-
-### "Cause list date is not greater than today"
-
-- The cause list hasn't been updated yet
-- Wait for the court to publish the next day's list
-
-### WhatsApp errors
-
-- Verify `ACCESS_TOKEN` is valid and not expired
-- Check `PHONE_NUMBER_ID` is correct
-- Ensure recipient numbers are in correct format (e.g., `917XXXXXXXXX`)
+| `camoufox` | Anti-detect browser automation |
+| `playwright` | Browser control library |
 
 ---
 

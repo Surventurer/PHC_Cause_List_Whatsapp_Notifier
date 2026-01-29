@@ -6,6 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from camoufox.sync_api import Camoufox
 
 
 # Define India Standard Time
@@ -24,122 +25,123 @@ class ScreenshotManager:
             cache_dir: Directory to save screenshot temporarily
         """
         self.target_url = target_url
-        self.api_url = "https://api.microlink.io/"
         
         # File path for screenshot
         self.cache_dir = cache_dir
         os.makedirs(self.cache_dir, exist_ok=True)
         self.screenshot_path = os.path.join(self.cache_dir, "screenshot.png")
     
-    def fetch_screenshot(self):
-        """Fetch screenshot from API and save to cache folder"""
+    def process_webpage(self):
+        """
+        Unified method to:
+        1. Open Camoufox browser
+        2. Extract cause list date from header
+        3. Take screenshot if needed (caller decides based on date return)
+        
+        Returns:
+            tuple: (extracted_date, screenshot_path)
+            - extracted_date: datetime object or None
+            - screenshot_path: str (path to file) or None (if not screenshotted yet)
+            
+        Note: This method purely captures data. The logic to decide *whether* to send
+        remains in the main loop, but we can't easily "pause" the browser, so we 
+        capture the screenshot here contextually if possible, or we just return the 
+        screenshot path if we took it.
+        
+        Actually, for efficiency, we should:
+        1. Launch browser
+        2. Get date
+        3. If date is valid, take screenshot immediately
+        4. Return both
+        """
+        print(f"[INFO] Launching Camoufox to check date and capture screenshot...")
+        
         try:
-            print("[INFO] Fetching screenshot from API...")
-            response = requests.get(self.api_url, params={
-                "url": self.target_url,
-                "screenshot.fullPage": "true",
-                # "screenshot.type": "png"
-            })
-            response.raise_for_status()
-            
-            data = response.json()
-            screenshot_url = data["data"]["screenshot"]["url"]
-            
-            # Download and save the screenshot
-            image_bytes = requests.get(screenshot_url).content
-            with open(self.screenshot_path, "wb") as f:
-                f.write(image_bytes)
-            
-            print(f"[OK] Screenshot saved to: {self.screenshot_path} ({len(image_bytes)} bytes)")
-            return True
+            with Camoufox(headless=True) as browser:
+                # Determine quality settings from environment variable
+                quality_setting = os.getenv("SCREENSHOT_QUALITY", "HIGH").upper()
+                
+                if quality_setting == "LOW":
+                    viewport = {"width": 800, "height": 600}
+                    scale_factor = 1
+                    print("[INFO] Using LOW quality (800x600, 1x)")
+                elif quality_setting == "MEDIUM":
+                    viewport = {"width": 1280, "height": 720}
+                    scale_factor = 1
+                    print("[INFO] Using MEDIUM quality (1280x720, 1x)")
+                else: # Default to HIGH
+                    viewport = {"width": 1920, "height": 1080}
+                    scale_factor = 2
+                    print(f"[INFO] Using {quality_setting} quality (1920x1080, 2x)")
+
+                page = browser.new_page(
+                    viewport=viewport,
+                    device_scale_factor=scale_factor
+                )
+                page.set_default_timeout(60000)
+                
+                print(f"[INFO] Navigating to: {self.target_url}")
+                page.goto(self.target_url)
+                
+                # Wait for content
+                time.sleep(5)
+                
+                # --- 1. Extract Date ---
+                extracted_date = self._extract_date_from_page_content(page.content())
+                
+                if not extracted_date:
+                     print("[WARN] Could not extract date from webpage.")
+                     return None, None
+                
+                # --- 2. Take Screenshot ---
+                # We take it now while the browser is open. 
+                # The caller will decide whether to USE it or delete it based on the date.
+                page.screenshot(path=self.screenshot_path, full_page=True)
+                file_size = os.path.getsize(self.screenshot_path)
+                print(f"[OK] Screenshot captured: {self.screenshot_path} ({file_size} bytes)")
+                
+                return extracted_date, self.screenshot_path
+
         except Exception as e:
-            print(f"[ERROR] Failed to fetch screenshot: {e}")
-            return False
-    
-    def get_screenshot(self):
-        """Fetch new screenshot and return the file path"""
-        if self.fetch_screenshot():
-            return self.screenshot_path
-        return None
-    
-    def extract_date_from_webpage(self):
-        """Extract cause list date from the webpage content"""
+            print(f"[ERROR] Browser automation failed: {e}")
+            return None, None
+
+    def _extract_date_from_page_content(self, html_content):
+        """Helper to parse date from HTML content (using BeautifulSoup)"""
         try:
-            print("[INFO] Fetching webpage to extract cause list date...")
-            response = requests.get(self.target_url, timeout=10)
-            response.raise_for_status()
+            soup = BeautifulSoup(html_content, 'html.parser')
             
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # First, try to find the specific element with ID that contains the cause list date
-            # The Patna High Court page has: <span id="ctl00_MainContent_lblHeader">Cause List for DD-MM-YYYY</span>
+            # Strategy 1: Specific ID
             header_element = soup.find(id='ctl00_MainContent_lblHeader')
             if header_element:
                 header_text = header_element.get_text(strip=True)
                 print(f"[INFO] Found header element: {header_text}")
                 
-                # Extract date from "Cause List for DD-MM-YYYY" format
                 date_match = re.search(r'(\d{1,2}[-/]\d{1,2}[-/]\d{4})', header_text)
                 if date_match:
-                    date_str = date_match.group(1)
-                    for date_format in ['%d-%m-%Y', '%d/%m/%Y']:
-                        try:
-                            extracted_date = datetime.strptime(date_str, date_format)
-                            print(f"[OK] Extracted date from header: {extracted_date.strftime('%d-%m-%Y')}")
-                            return extracted_date
-                        except ValueError:
-                            continue
+                    try:
+                        return datetime.strptime(date_match.group(1), '%d-%m-%Y')
+                    except ValueError:
+                        pass
             
-            # Fallback: Look for date in general text content
+            # Strategy 2: Regex in full text
             text_content = soup.get_text()
+            matches = re.findall(r'\b(\d{1,2}[-/]\d{1,2}[-/]\d{4})\b', text_content)
             
-            # Pattern: DD-MM-YYYY or DD/MM/YYYY
-            date_patterns = [
-                r'\b(\d{1,2}[-/]\d{1,2}[-/]\d{4})\b',  # DD-MM-YYYY or DD/MM/YYYY
-                r'\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b',  # DD Month YYYY
-            ]
+            for match in matches:
+                try:
+                    d = datetime.strptime(match, '%d-%m-%Y')
+                    # Sanity check: is date within reasonable range? (+/- 60 days)
+                    if abs((d - datetime.now()).days) < 60:
+                        print(f"[INFO] Extracted date from text: {match}")
+                        return d
+                except ValueError:
+                    continue
             
-            for pattern in date_patterns:
-                matches = re.findall(pattern, text_content, re.IGNORECASE)
-                if matches:
-                    for match in matches:
-                        # Try to parse the date
-                        for date_format in ['%d-%m-%Y', '%d/%m/%Y', '%d %B %Y', '%d %b %Y']:
-                            try:
-                                extracted_date = datetime.strptime(match, date_format)
-                                # Return dates within a reasonable range (60 days past to 30 days future)
-                                # Use .date() for comparison to avoid timezone issues
-                                days_diff = (extracted_date.date() - datetime.now(IST).date()).days
-                                if -60 <= days_diff <= 30:
-                                    print(f"[OK] Extracted date from webpage: {extracted_date.strftime('%d-%m-%Y')}")
-                                    return extracted_date
-                            except ValueError:
-                                continue
-            
-            # If no date found in standard formats, look in specific HTML elements
-            date_elements = soup.find_all(['h1', 'h2', 'h3', 'h4', 'div', 'span', 'td'], 
-                                         string=re.compile(r'\d{1,2}[-/]\d{1,2}[-/]\d{4}'))
-            
-            for element in date_elements:
-                element_text = element.get_text(strip=True)
-                matches = re.findall(r'\d{1,2}[-/]\d{1,2}[-/]\d{4}', element_text)
-                if matches:
-                    for match in matches:
-                        for date_format in ['%d-%m-%Y', '%d/%m/%Y']:
-                            try:
-                                extracted_date = datetime.strptime(match, date_format)
-                                days_diff = (extracted_date.date() - datetime.now(IST).date()).days
-                                if -60 <= days_diff <= 30:
-                                    print(f"[OK] Extracted date from webpage element: {extracted_date.strftime('%d-%m-%Y')}")
-                                    return extracted_date
-                            except ValueError:
-                                continue
-            
-            print("[WARN] Could not extract date from webpage")
             return None
             
         except Exception as e:
-            print(f"[WARN] Failed to extract date from webpage: {e}")
+            print(f"[WARN] Date parsing failed: {e}")
             return None
 
 
@@ -342,8 +344,8 @@ def send_cause_list():
         cache_dir="cache"
     )
     
-    # Extract cause list date from webpage automatically
-    cause_list_date = screenshot_manager.extract_date_from_webpage()
+    # Unified step: Extract date AND take screenshot (if possible)
+    cause_list_date, screenshot_path = screenshot_manager.process_webpage()
     
     # If no date found, skip
     if not cause_list_date:
@@ -353,6 +355,12 @@ def send_cause_list():
     # Check if cause list date is greater than today
     if cause_list_date.date() <= today.date():
         print(f"[SKIP] Cause list date ({cause_list_date.strftime('%d-%m-%Y')}) is not greater than today ({today.strftime('%d-%m-%Y')})")
+        # Optimization: Delete the screenshot taken if we don't need it
+        if screenshot_path and os.path.exists(screenshot_path):
+            try:
+                os.remove(screenshot_path)
+            except:
+                pass
         return False
     
     print("=" * 50)
@@ -367,10 +375,9 @@ def send_cause_list():
         access_token=ACCESS_TOKEN
     )
     
-    # Get screenshot
-    screenshot_path = screenshot_manager.get_screenshot()
-    if not screenshot_path:
-        print("[ERROR] Failed to get screenshot")
+    # In unified flow, screenshot_path is already returned
+    if not screenshot_path or not os.path.exists(screenshot_path):
+        print("[ERROR] Screenshot file missing despite successful date extraction")
         return False
     
     print(f"[INFO] Cached file: {screenshot_path}")
