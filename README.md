@@ -241,10 +241,38 @@ You can adjust the resolution and quality of the screenshot by setting the `SCRE
 | `MEDIUM` | 1280x720 | 1x | Good balance. Standard HD. (~400KB) |
 | `LOW` | 800x600 | 1x | Lowest file size (~250KB). Good for slow connections. |
 
-Example in `.env`:
-```env
-SCREENSHOT_QUALITY=HIGH
+### WhatsApp Backend
+
+You can choose between the official API and the native web automation using `WHATSAPP_BACKEND`.
+
+| Value | Description | Authentication |
+|-------|-------------|---------------|
+| `OFFICIAL` (Default) | Fast, reliable Meta Cloud API | Requires Access Token & 24h window |
+| `WEB` | Native WhatsApp Web (Headless) | **Free & Unlimited**. Uses any number. |
+
+**To use WhatsApp Web Mode:**
+1.  Set `WHATSAPP_BACKEND=WEB` in `.env`.
+2.  Ensure port `3000` is mapped in your Docker command or `docker-compose.yml` (required for QR scan).
+3.  Run the application. The bot will automatically start a **Live QR Dashboard**.
+4.  Open `http://localhost:3000` on your computer.
+5.  Scan the QR code with your phone (Linked Devices).
+6.  The session is saved to `cache/whatsapp_session.json` and will persist indefinitely.
+
+**Docker Example:**
+```bash
+docker compose run --rm -p 3000:3000 causelist-notifier
 ```
+
+---
+
+## Live QR Dashboard
+
+When using `WHATSAPP_BACKEND=WEB` in a headless environment (like Docker or a remote server), the bot provides a web-based dashboard to scan the QR code:
+
+- **URL**: `http://localhost:3000` (or your server's IP)
+- **Status**: Live-updates as you scan.
+- **Persistence**: Once scanned, the browser session is encrypted and saved locally. You won't need to scan again unless you manually log out from your phone.
+
 
 ---
 

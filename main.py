@@ -7,6 +7,9 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from camoufox.sync_api import Camoufox
+import base64
+import threading
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 
 # Define India Standard Time
@@ -31,76 +34,67 @@ class ScreenshotManager:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.screenshot_path = os.path.join(self.cache_dir, "screenshot.png")
     
-    def process_webpage(self):
+    def process_webpage(self, browser=None):
         """
-        Unified method to:
-        1. Open Camoufox browser
-        2. Extract cause list date from header
-        3. Take screenshot if needed (caller decides based on date return)
-        
-        Returns:
-            tuple: (extracted_date, screenshot_path)
-            - extracted_date: datetime object or None
-            - screenshot_path: str (path to file) or None (if not screenshotted yet)
-            
-        Note: This method purely captures data. The logic to decide *whether* to send
-        remains in the main loop, but we can't easily "pause" the browser, so we 
-        capture the screenshot here contextually if possible, or we just return the 
-        screenshot path if we took it.
-        
-        Actually, for efficiency, we should:
-        1. Launch browser
-        2. Get date
-        3. If date is valid, take screenshot immediately
-        4. Return both
+        Unified method to check date and capture screenshot.
+        Args:
+            browser: Optional existing Camoufox browser instance.
         """
         print(f"[INFO] Launching Camoufox to check date and capture screenshot...")
         
-        try:
-            with Camoufox(headless=True) as browser:
-                # Determine quality settings from environment variable
-                quality_setting = os.getenv("SCREENSHOT_QUALITY", "HIGH").upper()
-                
-                if quality_setting == "LOW":
-                    viewport = {"width": 800, "height": 600}
-                    scale_factor = 1
-                    print("[INFO] Using LOW quality (800x600, 1x)")
-                elif quality_setting == "MEDIUM":
-                    viewport = {"width": 1280, "height": 720}
-                    scale_factor = 1
-                    print("[INFO] Using MEDIUM quality (1280x720, 1x)")
-                else: # Default to HIGH
-                    viewport = {"width": 1920, "height": 1080}
-                    scale_factor = 2
-                    print(f"[INFO] Using {quality_setting} quality (1920x1080, 2x)")
+        # Internal helper to run logic with a given browser
+        def _run_with_browser(browser_instance):
+            # Determine quality settings from environment variable
+            quality_setting = os.getenv("SCREENSHOT_QUALITY", "HIGH").upper()
+            
+            if quality_setting == "LOW":
+                viewport = {"width": 800, "height": 600}
+                scale_factor = 1
+                print("[INFO] Using LOW quality (800x600, 1x)")
+            elif quality_setting == "MEDIUM":
+                viewport = {"width": 1280, "height": 720}
+                scale_factor = 1
+                print("[INFO] Using MEDIUM quality (1280x720, 1x)")
+            else: # Default to HIGH
+                viewport = {"width": 1920, "height": 1080}
+                scale_factor = 2
+                print(f"[INFO] Using {quality_setting} quality (1920x1080, 2x)")
 
-                page = browser.new_page(
-                    viewport=viewport,
-                    device_scale_factor=scale_factor
-                )
-                page.set_default_timeout(60000)
-                
-                print(f"[INFO] Navigating to: {self.target_url}")
-                page.goto(self.target_url)
-                
-                # Wait for content
-                time.sleep(5)
-                
-                # --- 1. Extract Date ---
-                extracted_date = self._extract_date_from_page_content(page.content())
-                
-                if not extracted_date:
-                     print("[WARN] Could not extract date from webpage.")
-                     return None, None
-                
-                # --- 2. Take Screenshot ---
-                # We take it now while the browser is open. 
-                # The caller will decide whether to USE it or delete it based on the date.
-                page.screenshot(path=self.screenshot_path, full_page=True)
-                file_size = os.path.getsize(self.screenshot_path)
-                print(f"[OK] Screenshot captured: {self.screenshot_path} ({file_size} bytes)")
-                
-                return extracted_date, self.screenshot_path
+            page = browser_instance.new_page(
+                viewport=viewport,
+                device_scale_factor=scale_factor
+            )
+            page.set_default_timeout(60000)
+            
+            print(f"[INFO] Navigating to: {self.target_url}")
+            page.goto(self.target_url)
+            
+            # Wait for content
+            time.sleep(5)
+            
+            # --- 1. Extract Date ---
+            extracted_date = self._extract_date_from_page_content(page.content())
+            
+            if not extracted_date:
+                 print("[WARN] Could not extract date from webpage.")
+                 page.close()
+                 return None, None
+            
+            # --- 2. Take Screenshot ---
+            # We take it now while the browser is open. 
+            page.screenshot(path=self.screenshot_path, full_page=True)
+            file_size = os.path.getsize(self.screenshot_path)
+            print(f"[OK] Screenshot captured: {self.screenshot_path} ({file_size} bytes)")
+            
+            page.close()
+            return extracted_date, self.screenshot_path
+
+        try:
+            if browser:
+                return _run_with_browser(browser)
+            else:
+                with Camoufox(headless=True) as new_browser:
+                    return _run_with_browser(new_browser)
 
         except Exception as e:
             print(f"[ERROR] Browser automation failed: {e}")
@@ -143,6 +137,478 @@ class ScreenshotManager:
         except Exception as e:
             print(f"[WARN] Date parsing failed: {e}")
             return None
+
+
+
+import threading
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+
+class QRHandler(SimpleHTTPRequestHandler):
+    """Custom handler to serve the QR dashboard"""
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>WhatsApp Web Login</title>
+                <meta http-equiv="refresh" content="5">
+                <style>
+                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #f0f2f5; }
+                    .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: inline-block; }
+                    h1 { color: #128C7E; }
+                    img { border: 1px solid #ddd; margin-top: 20px; max-width: 100%; }
+                    p { color: #666; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>Scan QR Code</h1>
+                    <p>Open WhatsApp on your phone > Menu > Linked Devices > Link a Device</p>
+                    <p>This page auto-refreshes every 5 seconds to show the latest code.</p>
+                    <img src="/whatsapp_qr.png" alt="Waiting for QR Code..." />
+                </div>
+            </body>
+            </html>
+            """
+            self.wfile.write(html.encode())
+        elif self.path == '/whatsapp_qr.png':
+            # Serve the specific file from the cache directory
+            # We map this request to the actual file path dynamically
+            cache_dir = getattr(self.server, 'cache_dir', 'cache')
+            qr_path = os.path.join(cache_dir, 'whatsapp_qr.png')
+            
+            try:
+                with open(qr_path, 'rb') as f:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'image/png')
+                    self.end_headers()
+                    self.wfile.write(f.read())
+            except FileNotFoundError:
+                self.send_error(404, f"QR Code not found yet in {qr_path}")
+        else:
+            self.send_error(404)
+
+class WhatsAppWebClient:
+    """
+    Native Python WhatsApp Web Client using Camoufox/Playwright.
+    Bypasses official API requirements and uses existing phone number.
+    Offers Live QR Dashboard at http://localhost:3000
+    """
+    
+    def __init__(self, cache_dir="cache"):
+        self.cache_dir = cache_dir
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.session_path = os.path.join(self.cache_dir, "whatsapp_session.json")
+        self.qr_path = os.path.join(self.cache_dir, "whatsapp_qr.png")
+        
+    def _start_qr_server(self):
+        """Starts a background HTTP server to serve the QR code"""
+        try:
+            server = HTTPServer(('0.0.0.0', 3000), QRHandler)
+            # Inject cache directory so the handler knows where to look
+            server.cache_dir = self.cache_dir
+            
+            thread = threading.Thread(target=server.serve_forever)
+            thread.daemon = True
+            thread.start()
+            print("[INFO] Live QR Dashboard running at: http://localhost:3000")
+            return server
+        except Exception as e:
+            print(f"[WARN] Failed to start QR server: {e}")
+            return None
+
+    def _save_debug_screenshot(self, page, name):
+        """Helper to save debug screenshots with timestamp"""
+        try:
+            timestamp = datetime.now().strftime("%H%M%S")
+            filename = f"debug_{timestamp}_{name}.png"
+            path = os.path.join(self.cache_dir, filename)
+            page.screenshot(path=path, full_page=True)
+            print(f"[DEBUG] Saved screenshot: {filename}")
+        except Exception as e:
+            print(f"[WARN] Failed to save debug screenshot {name}: {e}")
+
+    def _get_context(self, browser):
+        """Create a browser context, loading session if available"""
+        if os.path.exists(self.session_path):
+            size = os.path.getsize(self.session_path)
+            print(f"[INFO] Loading authenticated session... (Size: {size} bytes)")
+            if size < 100:
+                print("[WARN] Session file looks too small, might be invalid.")
+            return browser.new_context(storage_state=self.session_path)
+        else:
+            print("[INFO] Starting new session (No previous session found)...")
+            return browser.new_context()
+
+    def _paste_file(self, page, file_path):
+        """
+        Simulates pasting OR dropping a file into the chat.
+        Robust fallback that tries both Paste and Drag-and-Drop events.
+        """
+        print("[INFO] Simulating direct file injection (Paste/Drop)...")
+        
+        with open(file_path, "rb") as f:
+            encoded_file = base64.b64encode(f.read()).decode('utf-8')
+            
+        filename = os.path.basename(file_path)
+        mime = "image/png"
+        
+        js_script = """(args) => {
+            const [data, filename, mime] = args;
+            
+            // 1. Convert base64 to File Object
+            const byteCharacters = atob(data);
+            const byteArrays = [];
+            for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+                const slice = byteCharacters.slice(offset, offset + 512);
+                const byteNumbers = new Array(slice.length);
+                for (let i = 0; i < slice.length; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+            const blob = new Blob(byteArrays, {type: mime});
+            const file = new File([blob], filename, { type: mime });
+            
+            // 2. Prepare DataTransfer
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            
+            // 3. Find Target (Chat Input)
+            const getTarget = () => {
+                const selectors = [
+                    'div[aria-placeholder="Type a message"]',
+                    'div[data-tab="10"]', 
+                    'footer div[contenteditable="true"]',
+                    'div[role="textbox"][contenteditable="true"]'
+                ];
+                
+                for (let s of selectors) {
+                    const el = document.querySelector(s);
+                    if (el) return el;
+                }
+                return document.querySelector('div[contenteditable="true"]') || document.body;
+            };
+            
+            const target = getTarget();
+            target.focus();
+            
+            // 4. Dispatch 'paste' event
+            const pasteEvent = new ClipboardEvent('paste', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clipboardData: dt
+            });
+            target.dispatchEvent(pasteEvent);
+            
+            // 5. Dispatch 'drop' event (Backup)
+            const dropEvent = new DragEvent('drop', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                dataTransfer: dt
+            });
+            target.dispatchEvent(dropEvent);
+        }"""
+        
+        page.evaluate(js_script, [encoded_file, filename, mime])
+        print("[INFO] Injected file via JS (Paste + Drop events).")
+                
+    def send_image(self, recipient_number, image_path, caption="", browser=None):
+        print(f"[INFO] WhatsApp Web: Sending to {recipient_number}...")
+        
+        # Internal logic helper to run with a specific browser instance
+        def _send_logic(browser_instance):
+            context = self._get_context(browser_instance)
+            if not context: return False
+            
+            try:
+                # Reuse existing page if available (efficiency) or create new one
+                if context.pages:
+                     page = context.pages[0]
+                else:
+                    page = context.new_page()
+                    page.set_default_timeout(90000)
+                    
+                # --- PHASE 1: Navigate to Specific Chat ---
+                target_url = f"https://web.whatsapp.com/send?phone={recipient_number}"
+                print(f"[INFO] Navigating directly to chat: {target_url}")
+                page.goto(target_url)
+                time.sleep(5) # User requested 5s load time
+                self._save_debug_screenshot(page, "1_navigated_direct")
+                
+                # --- Authentication & Page Load ---
+                try:
+                        print("[INFO] Waiting for page load...")
+                        # Detect both logged-in state and login/logout screens
+                        page.wait_for_selector(
+                            'div[aria-placeholder="Type a message"], canvas, div[data-animate-modal-popup="true"], [data-icon="plus"], #initial_startup', 
+                            timeout=90000
+                        )
+                        time.sleep(5) 
+                        
+                        # Check for logout redirect
+                        if "post_logout=1" in page.url or page.locator('canvas').is_visible():
+                             print("[WARN] Session expired or logged out. Re-authentication required.")
+                             if os.path.exists(self.session_path):
+                                 os.remove(self.session_path)
+                                 print(f"[INFO] Cleared stale session: {self.session_path}")
+                except Exception as e:
+                        print(f"[ERROR] Timeout waiting for WhatsApp Web: {e}")
+                        self._save_debug_screenshot(page, "error_timeout")
+                        return False
+
+                # Handle QR Code if visible
+                if page.locator('canvas').is_visible() or "web.whatsapp.com" not in page.url or "post_logout=1" in page.url:
+                    if "post_logout=1" in page.url:
+                         print("[INFO] Re-navigating to main page for QR...")
+                         page.goto("https://web.whatsapp.com/")
+                         time.sleep(5)
+                         
+                    print("[WARN] Not logged in. Starting Live QR Dashboard...")
+                    self._save_debug_screenshot(page, "2_needs_login")
+                    
+                    self._start_qr_server()
+                    print(f"[ACTION REQUIRED] Open http://localhost:3000 to scan the QR code.")
+                    
+                    max_retries = 30
+                    for i in range(max_retries):
+                        if page.locator('div[role="textbox"]').count() > 0 or page.locator('div[aria-placeholder="Type a message"]').count() > 0:
+                            print("[INFO] Login detected!")
+                            time.sleep(5) # Wait for UI to settle after login
+                            context.storage_state(path=self.session_path)
+                            self._save_debug_screenshot(page, "3_login_success")
+                            break
+                        
+                        if page.locator('canvas').is_visible():
+                            try:
+                                page.locator('div[data-ref]').first.screenshot(path=self.qr_path)
+                            except:
+                                page.screenshot(path=self.qr_path, full_page=True)
+                        
+                        time.sleep(2)
+                        print(f"[INFO] Waiting for scan... ({i+1}/{max_retries})")
+                        
+                    else:
+                            print("[ERROR] Login timed out.")
+                            self._save_debug_screenshot(page, "error_login_timeout")
+                            return False
+
+                # --- PHASE 2: UI-Driven File Upload ---
+                print("[INFO] Chat loaded. Triggering 'Attach' menu...")
+                
+                # 1. Verify Chat Input is ready
+                chat_input = page.locator('div[aria-placeholder="Type a message"]')
+                if chat_input.count() == 0:
+                    print("[INFO] Chat input not found, re-navigating to target chat...")
+                    page.goto(target_url)
+                    time.sleep(5)
+                    chat_input = page.locator('div[aria-placeholder="Type a message"]')
+
+                try:
+                    chat_input.wait_for(state="visible", timeout=30000)
+                    time.sleep(5) 
+                    self._save_debug_screenshot(page, "4_chat_ready")
+                except:
+                    if page.locator('div[data-animate-modal-popup="true"]').count() > 0:
+                        print(f"[ERROR] Invalid Phone Number (Delayed): {recipient_number}")
+                        return False
+                    print("[ERROR] Chat input not found.")
+                    self._save_debug_screenshot(page, "error_chat_input_not_found")
+                    return False
+                
+                # 2. Click Attach (+) Button
+                try:
+                    print("[INFO] Clicking Attach button (+)...")
+                    # Try to find the button and click it, forcing if necessary
+                    attach_button = page.locator('span[data-icon="plus"], [aria-label="Attach"]').first
+                    attach_button.click(force=True)
+                    time.sleep(3)
+                    self._save_debug_screenshot(page, "5_attach_menu_open")
+                except Exception as e:
+                    print(f"[ERROR] Failed to click Attach button: {e}")
+                    self._save_debug_screenshot(page, "error_attach_click")
+                    return False
+
+                # 3. Click 'Photos & Videos' and Upload
+                try:
+                    print("[INFO] Selecting 'Photos & videos' option...")
+                    # The menu might take a moment to animate
+                    # We try multiple ways to find the 'Photos & videos' button
+                    media_option_selectors = [
+                        'li:has-text("Photos & videos")',
+                        'div[aria-label="Photos & videos"]',
+                        'span:has-text("Photos & videos")',
+                        '[data-icon="attach-image"]'
+                    ]
+                    
+                    target_option = None
+                    for sel in media_option_selectors:
+                        loc = page.locator(sel).first
+                        if loc.count() > 0:
+                            target_option = loc
+                            break
+                    
+                    if not target_option:
+                        print("[ERROR] Could not find 'Photos & videos' menu item.")
+                        self._save_debug_screenshot(page, "error_menu_item_not_found")
+                        return False
+
+                    print(f"[INFO] Clicking option and handling file chooser...")
+                    with page.expect_file_chooser() as fc_info:
+                        # Use force=True because WA menus often have hidden overlays
+                        target_option.click(force=True)
+                    
+                    file_chooser = fc_info.value
+                    file_chooser.set_files(image_path)
+                    
+                    print("[INFO] Image uploaded via File Chooser.")
+                    time.sleep(10) # Heavy wait for media generation
+                    self._save_debug_screenshot(page, "6_file_set_via_chooser")
+                except Exception as e:
+                    print(f"[ERROR] UI-driven upload failed: {e}")
+                    # Final fallback: look for the input that just appeared
+                    print("[INFO] Attempting direct input fallback...")
+                    try:
+                        file_input = page.locator('input[type="file"][accept*="video/mp4"], input[type="file"][accept*="image/"]').first
+                        file_input.set_input_files(image_path)
+                        time.sleep(10)
+                    except: pass
+                    self._save_debug_screenshot(page, "error_ui_upload")
+
+                # --- PHASE 3: Handle Preview Modal (Caption & Send) ---
+                print("[INFO] Waiting for image preview modal...")
+                try:
+                    # Look for the media preview footer or the send button
+                    send_selectors = [
+                        'span[data-icon="send"]',
+                        '[data-icon="send"]',
+                        '[aria-label="Send"]'
+                    ]
+                    
+                    send_button = None
+                    print("[INFO] Searching for send button...")
+                    # WA preview modal often has a 1-2s entry animation
+                    time.sleep(5)
+                    
+                    for selector in send_selectors:
+                        try:
+                            # In the preview modal, the send button is usually the last one
+                            btn = page.locator(selector).last
+                            if btn.is_visible(timeout=10000):
+                                send_button = btn
+                                print(f"[INFO] Found send button: {selector}")
+                                break
+                        except: continue
+                    
+                    if not send_button:
+                         print("[ERROR] Could not find send button in preview modal.")
+                         self._save_debug_screenshot(page, "error_no_send_button")
+                         return False
+
+                    self._save_debug_screenshot(page, "7_preview_modal")
+                    
+                    if caption:
+                        print(f"[INFO] Typing caption: {caption}")
+                        # In the media editor, we want the caption box specifically.
+                        # Using force click to bypass interception.
+                        caption_box = page.locator('div[aria-placeholder="Add a caption"]').last
+                        
+                        if caption_box.count() == 0:
+                             print("[WARN] aria-placeholder not found, searching for contenteditable in viewer footer...")
+                             caption_box = page.locator('footer div[contenteditable="true"], .media-viewer-footer div[contenteditable="true"]').last
+                        
+                        if caption_box.count() == 0:
+                             caption_box = page.locator('div[contenteditable="true"]').last
+                        
+                        # Use force=True to handle the "intercepted pointer events" error
+                        caption_box.click(force=True)
+                        time.sleep(2)
+                        
+                        # Use keyboard to type character by character
+                        # First clear any placeholder
+                        page.keyboard.press("Control+A")
+                        page.keyboard.press("Backspace")
+                        
+                        # Type character by character to handle newlines correctly
+                        # In WA Media Editor, plain \n sometimes sends or behaves weirdly.
+                        # Shift+Enter is the standard for newline in captions.
+                        for char in caption:
+                            if char == '\n':
+                                page.keyboard.press("Shift+Enter")
+                            else:
+                                page.keyboard.type(char)
+                            time.sleep(0.02) # Subtle character delay
+                            
+                        time.sleep(3)
+                        self._save_debug_screenshot(page, "8_caption_filled")
+
+                    print("[INFO] Sending message...")
+                    send_button.click(force=True)
+                    
+                    # Wait for message to actually send (modal closes)
+                    time.sleep(10) 
+                    
+                    print("[OK] Message send process completed.")
+                    self._save_debug_screenshot(page, "9_final")
+                    context.storage_state(path=self.session_path)
+                    return True
+                except Exception as e:
+                    print(f"[ERROR] Preview/Send failed: {e}")
+                    self._save_debug_screenshot(page, "error_preview")
+                    return False
+            except Exception as e:
+                print(f"[ERROR] WhatsApp Web automation error: {e}")
+                return False
+
+        # Support both Provided Browser and Creating New One
+        if browser:
+            return _send_logic(browser)
+        else:
+            try:
+                with Camoufox(headless=True) as new_browser:
+                    return _send_logic(new_browser)
+            except Exception as e:
+                print(f"[ERROR] Browser launch failed: {e}")
+                return False
+
+    def send_to_multiple(self, image_path, recipient_numbers, caption="", delay_seconds=5, browser=None):
+        """Web version of bulk sender"""
+        successful_sends = 0
+        failed_sends = 0
+        
+        # Internal loop helper
+        def _loop(browser_instance):
+            nonlocal successful_sends, failed_sends
+            for idx, recipient in enumerate(recipient_numbers, 1):
+                print(f"\n[{idx}/{len(recipient_numbers)}] Sending to {recipient}...")
+                
+                if self.send_image(recipient, image_path, caption, browser=browser_instance):
+                    successful_sends += 1
+                else:
+                    failed_sends += 1
+                
+                if idx < len(recipient_numbers):
+                    wait_time = delay_seconds + 5 # Extra buffer
+                    print(f"[INFO] Waiting {wait_time}s...")
+                    time.sleep(wait_time)
+        
+        if browser:
+             _loop(browser)
+        else:
+             try:
+                 with Camoufox(headless=True) as new_browser:
+                    _loop(new_browser)
+             except Exception as e:
+                 print(f"[ERROR] Bulk sender browser failed: {e}")
+        
+        return successful_sends, failed_sends
 
 
 
@@ -369,32 +835,52 @@ def send_cause_list():
     print(f"Cause List Date: {cause_list_date.strftime('%A, %d-%m-%Y')}")
     print("=" * 50)
     
-    # Initialize WhatsApp manager
-    whatsapp_manager = WhatsAppManager(
-        phone_number_id=PHONE_NUMBER_ID,
-        access_token=ACCESS_TOKEN
-    )
+    # ----------------------------------------------------
+    # BACKEND SELECTION
+    # ----------------------------------------------------
+    # "OFFICIAL" -> WhatsApp Business Cloud API (Meta)
+    # "WEB"      -> Native WhatsApp Web Automation (Camoufox)
+    WHATSAPP_BACKEND = os.getenv("WHATSAPP_BACKEND", "OFFICIAL").upper()
+    print(f"[INFO] Using WhatsApp Backend: {WHATSAPP_BACKEND}")
+    
+    caption = f"Patna High Court Cause List\n{cause_list_date.strftime('%d-%m-%Y')}"
     
     # In unified flow, screenshot_path is already returned
     if not screenshot_path or not os.path.exists(screenshot_path):
         print("[ERROR] Screenshot file missing despite successful date extraction")
         return False
-    
+        
     print(f"[INFO] Cached file: {screenshot_path}")
-    
-    # Send via WhatsApp
     print("\n" + "=" * 50)
     print(f"[INFO] Sending to {len(recipient_numbers)} recipient(s)...")
     print("=" * 50)
     
-    caption = f"Patna High Court Cause List\n{cause_list_date.strftime('%d-%m-%Y')}"
-    
-    successful_sends, failed_sends = whatsapp_manager.send_to_multiple(
-        screenshot_path,
-        recipient_numbers,
-        caption=caption,
-        delay_seconds=2
-    )
+    successful_sends = 0
+    failed_sends = 0
+
+    if WHATSAPP_BACKEND == "WEB":
+        # --- Native WhatsApp Web ---
+        web_client = WhatsAppWebClient()
+        successful_sends, failed_sends = web_client.send_to_multiple(
+            screenshot_path, 
+            recipient_numbers, 
+            caption=caption
+        )
+        
+    else:
+        # --- Official Cloud API (Default) ---
+        # Initialize WhatsApp manager
+        whatsapp_manager = WhatsAppManager(
+            phone_number_id=PHONE_NUMBER_ID,
+            access_token=ACCESS_TOKEN
+        )
+        
+        successful_sends, failed_sends = whatsapp_manager.send_to_multiple(
+            screenshot_path,
+            recipient_numbers,
+            caption=caption,
+            delay_seconds=2
+        )
     
     # Clean up temp file after sending
     if os.path.exists(screenshot_path):

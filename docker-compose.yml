@@ -10,12 +10,16 @@ services:
     environment:
       - TZ=Asia/Kolkata
       - SCREENSHOT_QUALITY=${SCREENSHOT_QUALITY:-HIGH}
+      - WHATSAPP_BACKEND=${WHATSAPP_BACKEND:-OFFICIAL}
     env_file:
       - .env
 
-    # Volume for cache persistence (tracks sent messages)
     volumes:
       - app_cache:/app/cache
+
+    # Port for Live QR Dashboard
+    ports:
+      - "3000:3000"
 
     # Resource limits for lightweight operation
     deploy:
