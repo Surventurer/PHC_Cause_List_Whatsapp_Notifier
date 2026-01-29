@@ -189,18 +189,18 @@ docker compose down
 
 ```
 PHC_Cause_List_Whatsapp_Notifier/
-├── main.py              # Main application code
-├── Dockerfile           # Docker image definition
-├── docker-compose.yml   # Docker Compose configuration
-├── .env                 # Environment variables (not in git)
-├── .gitignore           # Git ignore rules
-├── pyproject.toml       # Python project configuration
-├── uv.lock              # Dependency lock file
-├── README.md            # This file
-├── test.py              # Test script for screenshot verification
-└── cache/               # Temporary files
-    ├── screenshot.png   # Cached screenshot (deleted after send)
-    └── sent_today.txt   # Tracks if message was sent today
+├── main.py              # Main application logic
+├── Dockerfile           # Production container definition
+├── docker-compose.yml   # Orchestration for services
+├── pyproject.toml       # Python dependencies (uv)
+├── uv.lock              # Deterministic lock file
+├── .env                 # Secrets (Ignored by git)
+├── .gitignore           # File exclusion rules
+├── README.md            # This documentation
+├── LICENSE              # Project license
+└── cache/               # Local data (Ignored by git)
+    ├── screenshot.png   # Temporary image buffer
+    └── sent_today.txt   # Duplicate prevention marker
 ```
 
 ---
@@ -250,26 +250,26 @@ SCREENSHOT_QUALITY=HIGH
 
 ## How It Works
 
-### 1. Date Extraction
+### 1. Unified Scraping & Screenshotting
 
-The system fetches the court website and looks for the cause list date in:
-```html
-<span id="ctl00_MainContent_lblHeader">Cause List for DD-MM-YYYY</span>
-```
+To maximize efficiency and bypass anti-bot protections, the system uses a **unified Camoufox session**:
+1.  **Launch**: A stealth Firefox instance (Camoufox) is launched.
+2.  **Navigate**: It navigates to the Patna High Court cause list page.
+3.  **Extract**: It parses the HTML content to find the cause list date (e.g., `ctl00_MainContent_lblHeader`).
+4.  **Capture**: If the date is valid (a future date), it immediately takes a full-page screenshot using the configured quality settings.
+5.  **Close**: The browser session is closed, ensuring minimal resource usage.
 
-### 2. Screenshot Capture
+This unified approach ensures we only hit the court's servers once per check, reducing the chance of being flagged as a bot.
 
-Uses **Camoufox** (a modified version of Playwright/Firefox) to capture a full-page screenshot. This ensures the request looks like a legitimate residential user using Firefox, bypassing anti-bot screens (Cloudflare, etc.) without external APIs.
-
-### 3. WhatsApp Integration
+### 2. WhatsApp Integration
 
 Uses WhatsApp Business Cloud API v21.0:
-1. Upload media to get `media_id`
-2. Send image message with caption to recipients
+1.  **Upload**: The captured screenshot is uploaded to WhatsApp servers to get a `media_id`.
+2.  **Send**: A message is sent to all configured recipients with the screenshot and a dynamic caption.
 
-### 4. Duplicate Prevention
+### 3. Duplicate Prevention
 
-After successful send, writes today's date to `cache/sent_today.txt`. On next check, skips if date matches.
+To avoid spamming, the system tracks successes in `cache/sent_today.txt`. Once a list is successfully sent for a specific date, it won't check again until the next day.
 
 ---
 
@@ -277,11 +277,11 @@ After successful send, writes today's date to `cache/sent_today.txt`. On next ch
 
 | Package | Purpose |
 |---------|---------|
-| `requests` | HTTP requests for API calls |
+| `camoufox` | Stealth browser automation (Anti-Bot) |
+| `playwright` | Browser control engine |
+| `requests` | HTTP calls to WhatsApp Business API |
 | `beautifulsoup4` | HTML parsing for date extraction |
-| `python-dotenv` | Environment variable management |
-| `camoufox` | Anti-detect browser automation |
-| `playwright` | Browser control library |
+| `python-dotenv` | Configuration management |
 
 ---
 
