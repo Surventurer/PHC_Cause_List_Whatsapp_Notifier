@@ -69,11 +69,15 @@ class ScreenshotManager:
             print(f"[INFO] Navigating to: {self.target_url}")
             page.goto(self.target_url)
             
-            # Wait for content
-            time.sleep(5)
+            # Wait for content to settle
+            try:
+                page.wait_for_selector('#ctl00_MainContent_lblHeader', timeout=30000)
+            except:
+                print("[WARN] lblHeader not found quickly, proceeding anyway...")
             
-            # --- 1. Extract Date ---
-            extracted_date = self._extract_date_from_page_content(page.content())
+            time.sleep(5) 
+            html_content = page.content()
+            extracted_date = self._extract_date_from_page_content(html_content)
             
             if not extracted_date:
                  print("[WARN] Could not extract date from webpage.")
@@ -155,21 +159,34 @@ class QRHandler(SimpleHTTPRequestHandler):
             <html>
             <head>
                 <title>WhatsApp Web Login</title>
-                <meta http-equiv="refresh" content="5">
+                <meta http-equiv="refresh" content="2">
                 <style>
-                    body { font-family: sans-serif; text-align: center; padding: 50px; background: #f0f2f5; }
-                    .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: inline-block; }
-                    h1 { color: #128C7E; }
-                    img { border: 1px solid #ddd; margin-top: 20px; max-width: 100%; }
-                    p { color: #666; }
+                    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f2f5; margin: 0; }
+                    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); display: inline-block; max-width: 400px; margin-top: 50px; }
+                    h1 { color: #128C7E; font-size: 24px; margin-bottom: 10px; }
+                    .status { display: inline-block; padding: 5px 15px; background: #e7f3ff; color: #007bff; border-radius: 20px; font-weight: bold; margin-bottom: 20px; }
+                    .qr-container { border: 2px solid #25d366; padding: 10px; border-radius: 10px; background: white; }
+                    img { display: block; width: 100%; height: auto; border-radius: 5px; }
+                    .steps { text-align: left; margin-top: 20px; color: #555; font-size: 14px; }
+                    .steps ol { padding-left: 20px; }
                 </style>
             </head>
             <body>
                 <div class="card">
-                    <h1>Scan QR Code</h1>
-                    <p>Open WhatsApp on your phone > Menu > Linked Devices > Link a Device</p>
-                    <p>This page auto-refreshes every 5 seconds to show the latest code.</p>
-                    <img src="/whatsapp_qr.png" alt="Waiting for QR Code..." />
+                    <h1>WhatsApp Login</h1>
+                    <div class="status">Waiting for Scan...</div>
+                    <div class="qr-container">
+                        <img src="/whatsapp_qr.png?t=""" + str(int(time.time())) + """" alt="QR Code Loading..." />
+                    </div>
+                    <div class="steps">
+                        <strong>Steps:</strong>
+                        <ol>
+                            <li>Open <b>WhatsApp</b> on your phone</li>
+                            <li>Tap <b>Menu</b> or <b>Settings</b></li>
+                            <li>Select <b>Linked Devices</b></li>
+                            <li>Tap <b>Link a Device</b> and scan this code</li>
+                        </ol>
+                    </div>
                 </div>
             </body>
             </html>
@@ -232,17 +249,196 @@ class WhatsAppWebClient:
         except Exception as e:
             print(f"[WARN] Failed to save debug screenshot {name}: {e}")
 
+    def _get_persistent_context(self, playwright):
+        """
+        Create a persistent browser context using WAHA's optimal configuration.
+        Source: waha/src/core/engines/webjs/session.webjs.core.ts
+        """
+        # Ensure profile directory exists in the cache
+        self.profile_dir = os.path.join(self.cache_dir, "whatsapp_profile")
+        os.makedirs(self.profile_dir, exist_ok=True)
+        
+        print(f"[INFO] Using persistent profile: {self.profile_dir}")
+        
+        # WAHA Browser Arguments (Optimized for WhatsApp Web)
+        waha_args = [
+            '--disable-accelerated-2d-canvas',
+            '--disable-application-cache',
+            '--disable-client-side-phishing-detection',
+            '--disable-component-update',
+            '--disable-default-apps',
+            '--disable-dev-shm-usage',
+            '--disable-extensions',
+            '--disable-metrics',
+            '--disable-offer-store-unmasked-wallet-cards',
+            '--disable-offline-load-stale-cache',
+            '--disable-popup-blocking',
+            '--disable-setuid-sandbox',
+            '--disable-site-isolation-trials',
+            '--disable-speech-api',
+            '--disable-sync',
+            '--disable-translate',
+            '--disable-web-security',
+            '--hide-scrollbars',
+            '--ignore-certificate-errors',
+            '--ignore-ssl-errors',
+            '--metrics-recording-only',
+            '--mute-audio',
+            '--no-default-browser-check',
+            '--no-first-run',
+            '--no-pings',
+            '--no-sandbox',
+            '--no-zygote',
+            '--password-store=basic',
+            '--renderer-process-limit=2',
+            '--safebrowsing-disable-auto-update',
+            '--use-mock-keychain',
+            '--window-size=1280,720',
+            '--disable-blink-features=AutomationControlled',
+            '--disk-cache-size=1073741824', 
+        ]
+        
+        waha_user_agent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+        
+        context = playwright.chromium.launch_persistent_context(
+            user_data_dir=self.profile_dir,
+            headless=False,
+            args=waha_args,
+            ignore_default_args=['--enable-automation'],
+            viewport={'width': 1280, 'height': 720},
+            user_agent=waha_user_agent,
+            locale='en-US',
+            timezone_id='Asia/Kolkata',
+            permissions=['clipboard-read', 'clipboard-write'],  # Enable Clipboard for Copy/Paste
+        )
+        
+        # Extended Stealth for WA Web
+        stealth_js = """
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        Object.defineProperty(navigator, 'plugins', { 
+            get: () => [{ description: "PDF", filename: "internal-pdf-viewer", name: "Chrome PDF Plugin" }] 
+        });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        window.chrome = { runtime: {} };
+        """
+        context.add_init_script(stealth_js)
+        return context
+
+    def start(self):
+        """Start the session (Reference to WAHA: session.start())"""
+        from playwright.sync_api import sync_playwright
+        print("[INFO] Starting persistent session...")
+        self._playwright = sync_playwright().start()
+        self._context = self._get_persistent_context(self._playwright)
+        return self._context
+
+    def stop(self):
+        """Stop the session (Reference to WAHA: session.stop())"""
+        print("[INFO] Stopping session...")
+        if hasattr(self, '_context'):
+            self._context.close()
+        if hasattr(self, '_playwright'):
+            self._playwright.stop()
+        print("[INFO] Session stopped.")
+
     def _get_context(self, browser):
-        """Create a browser context, loading session if available"""
+        """Create a browser context, loading session if available [LEGACY]"""
         if os.path.exists(self.session_path):
-            size = os.path.getsize(self.session_path)
-            print(f"[INFO] Loading authenticated session... (Size: {size} bytes)")
-            if size < 100:
-                print("[WARN] Session file looks too small, might be invalid.")
             return browser.new_context(storage_state=self.session_path)
-        else:
-            print("[INFO] Starting new session (No previous session found)...")
-            return browser.new_context()
+        return browser.new_context()
+
+    def _ensure_loggedin(self, page):
+        """
+        Helper to ensure the session is authenticated.
+        Navigates to root web.whatsapp.com and handles QR code if needed.
+        Solved the 'unable to scan' problem by ensuring a clean entry point.
+        """
+        print("[INFO] Verifying authentication status...")
+        if "web.whatsapp.com" not in page.url:
+            page.goto("https://web.whatsapp.com/")
+            
+        try:
+            # Wait for either QR code (canvas) or Main Chat List (pane-side)
+            page.wait_for_selector('canvas, [data-icon="chat"], [data-icon="menu"], div[role="textbox"]', timeout=60000)
+            time.sleep(2)
+        except:
+             # Just a warm-up check, sometimes it's slow
+             pass
+        
+        # 1. Check if we are already logged in (Priority)
+        # If the main UI is visible, we are logged in, even if a canvas is present (e.g. background/startup)
+        # Added div[role="textbox"] back as it often appears as the search bar
+        if page.locator('[data-icon="chat"], [data-icon="menu"], [data-icon="intro-md-beta-logo-dark"], [data-icon="intro-md-beta-logo-light"], div[role="textbox"]').count() > 0:
+            print("[INFO] Already logged in.")
+            return True
+
+        # Check for loading screen
+        if page.locator('progress').is_visible() or page.locator('[data-testid="progress-bar"]').is_visible():
+            print("[INFO] WhatsApp is loading... waiting.")
+            try:
+                page.wait_for_selector('[data-icon="chat"], [data-icon="menu"]', timeout=30000)
+                print("[INFO] Loading complete. Logged in.")
+                return True
+            except:
+                print("[WARN] Timed out waiting for load.")
+
+        # 2. Check for QR Code (Secondary)
+        if page.locator('canvas').is_visible():
+            print("[WARN] QR Code detected. Session not authenticated.")
+            # Verify if we really have chat list (sometimes canvas exists in background?)
+            # But usually canvas means scan needed.
+        
+            print("[WARN] Not logged in. Starting Live QR Dashboard...")
+            self._save_debug_screenshot(page, "auth_qr_needed")
+            self._start_qr_server()
+            print(f"[ACTION REQUIRED] Open http://localhost:3000 to scan the QR code.")
+            
+            max_retries = 60 # 2 minutes to scan
+            for i in range(max_retries):
+                # Strict check for success
+                if page.locator('[data-icon="chat"], [data-icon="menu"], div[role="textbox"]').count() > 0:
+                    print("[INFO] Login detected!")
+                    time.sleep(5)
+                    self._save_debug_screenshot(page, "login_success")
+                    return True
+                
+                # Snapshot for dashboard
+                if page.locator('canvas').is_visible():
+                    # Handle "Reload QR" button if it appears
+                    reload_selectors = ['button:has-text("Click to reload QR")', '[data-icon="refresh-large"]', 'span[role="button"]:has-text("Reload")']
+                    for sel in reload_selectors:
+                        try:
+                            btn = page.locator(sel).first
+                            if btn.is_visible(timeout=1000):
+                                print("[INFO] QR expired. Clicking reload button...")
+                                btn.click()
+                                time.sleep(2)
+                                break
+                        except: pass
+
+                    try:
+                        # Strategy 1: The official container
+                        qr_container = page.locator('div[data-ref]').first
+                        if qr_container.is_visible():
+                            qr_container.screenshot(path=self.qr_path)
+                        else:
+                            # Strategy 2: The canvas itself
+                            page.locator('canvas').first.screenshot(path=self.qr_path)
+                    except:
+                        # Fallback: Just the center of the page
+                        page.screenshot(path=self.qr_path)
+                
+                time.sleep(2)
+                if i % 10 == 0:
+                    print(f"[INFO] Waiting for scan... ({i}/{max_retries})")
+            
+            print("[ERROR] Login timed out.")
+            return False
+
+        # Fallback: If we are here, we see neither a login screen nor a QR code
+        print("[ERROR] Unknown state. Neither logged in nor QR code found.")
+        self._save_debug_screenshot(page, "auth_failed_unknown_state")
+        return False
 
     def _paste_file(self, page, file_path):
         """
@@ -320,293 +516,293 @@ class WhatsAppWebClient:
         page.evaluate(js_script, [encoded_file, filename, mime])
         print("[INFO] Injected file via JS (Paste + Drop events).")
                 
-    def send_image(self, recipient_number, image_path, caption="", browser=None):
-        print(f"[INFO] WhatsApp Web: Sending to {recipient_number}...")
+    def _core_send_image(self, context, recipient_number, image_path, caption):
+        """
+        Core logic: Sends image using an ACTIVE Playwright context.
+        """
+        if not context: return False
         
-        # Internal logic helper to run with a specific browser instance
-        def _send_logic(browser_instance):
-            context = self._get_context(browser_instance)
-            if not context: return False
+        try:
+            if context.pages:
+                 page = context.pages[0]
+            else:
+                page = context.new_page()
             
+            page.set_default_timeout(90000)
+            
+            # 1. Ensure we are logged in FIRST
+            if not self._ensure_loggedin(page):
+                print("[ERROR] Authentication failed. Cannot proceed.")
+                return False
+                
+            # 2. Navigate to Specific Chat
+            target_url = f"https://web.whatsapp.com/send?phone={recipient_number}"
+            print(f"[INFO] Navigating directly to chat: {target_url}")
+            page.goto(target_url)
+            
+            # 3. Wait for Chat Load (Handling Landing Pages)
             try:
-                # Reuse existing page if available (efficiency) or create new one
-                if context.pages:
-                     page = context.pages[0]
-                else:
-                    page = context.new_page()
-                    page.set_default_timeout(90000)
-                    
-                # --- PHASE 1: Navigate to Specific Chat ---
-                target_url = f"https://web.whatsapp.com/send?phone={recipient_number}"
-                print(f"[INFO] Navigating directly to chat: {target_url}")
-                page.goto(target_url)
-                time.sleep(5) # User requested 5s load time
-                self._save_debug_screenshot(page, "1_navigated_direct")
-                
-                # --- Authentication & Page Load ---
+                print("[INFO] Waiting for chat UI...")
+                # Check for "Continue to Chat" landing page
                 try:
-                        print("[INFO] Waiting for page load...")
-                        # Detect both logged-in state and login/logout screens
-                        page.wait_for_selector(
-                            'div[aria-placeholder="Type a message"], canvas, div[data-animate-modal-popup="true"], [data-icon="plus"], #initial_startup', 
-                            timeout=90000
-                        )
-                        time.sleep(5) 
-                        
-                        # Check for logout redirect
-                        if "post_logout=1" in page.url or page.locator('canvas').is_visible():
-                             print("[WARN] Session expired or logged out. Re-authentication required.")
-                             if os.path.exists(self.session_path):
-                                 os.remove(self.session_path)
-                                 print(f"[INFO] Cleared stale session: {self.session_path}")
-                except Exception as e:
-                        print(f"[ERROR] Timeout waiting for WhatsApp Web: {e}")
-                        self._save_debug_screenshot(page, "error_timeout")
-                        return False
-
-                # Handle QR Code if visible
-                if page.locator('canvas').is_visible() or "web.whatsapp.com" not in page.url or "post_logout=1" in page.url:
-                    if "post_logout=1" in page.url:
-                         print("[INFO] Re-navigating to main page for QR...")
-                         page.goto("https://web.whatsapp.com/")
-                         time.sleep(5)
-                         
-                    print("[WARN] Not logged in. Starting Live QR Dashboard...")
-                    self._save_debug_screenshot(page, "2_needs_login")
-                    
-                    self._start_qr_server()
-                    print(f"[ACTION REQUIRED] Open http://localhost:3000 to scan the QR code.")
-                    
-                    max_retries = 30
-                    for i in range(max_retries):
-                        if page.locator('div[role="textbox"]').count() > 0 or page.locator('div[aria-placeholder="Type a message"]').count() > 0:
-                            print("[INFO] Login detected!")
-                            time.sleep(5) # Wait for UI to settle after login
-                            context.storage_state(path=self.session_path)
-                            self._save_debug_screenshot(page, "3_login_success")
-                            break
-                        
-                        if page.locator('canvas').is_visible():
-                            try:
-                                page.locator('div[data-ref]').first.screenshot(path=self.qr_path)
-                            except:
-                                page.screenshot(path=self.qr_path, full_page=True)
-                        
-                        time.sleep(2)
-                        print(f"[INFO] Waiting for scan... ({i+1}/{max_retries})")
-                        
-                    else:
-                            print("[ERROR] Login timed out.")
-                            self._save_debug_screenshot(page, "error_login_timeout")
-                            return False
-
-                # --- PHASE 2: UI-Driven File Upload ---
-                print("[INFO] Chat loaded. Triggering 'Attach' menu...")
-                
-                # 1. Verify Chat Input is ready
-                chat_input = page.locator('div[aria-placeholder="Type a message"]')
-                if chat_input.count() == 0:
-                    print("[INFO] Chat input not found, re-navigating to target chat...")
-                    page.goto(target_url)
-                    time.sleep(5)
-                    chat_input = page.locator('div[aria-placeholder="Type a message"]')
-
-                try:
-                    chat_input.wait_for(state="visible", timeout=30000)
-                    time.sleep(5) 
-                    self._save_debug_screenshot(page, "4_chat_ready")
-                except:
-                    if page.locator('div[data-animate-modal-popup="true"]').count() > 0:
-                        print(f"[ERROR] Invalid Phone Number (Delayed): {recipient_number}")
-                        return False
-                    print("[ERROR] Chat input not found.")
-                    self._save_debug_screenshot(page, "error_chat_input_not_found")
-                    return False
-                
-                # 2. Click Attach (+) Button
-                try:
-                    print("[INFO] Clicking Attach button (+)...")
-                    # Try to find the button and click it, forcing if necessary
-                    attach_button = page.locator('span[data-icon="plus"], [aria-label="Attach"]').first
-                    attach_button.click(force=True)
-                    time.sleep(3)
-                    self._save_debug_screenshot(page, "5_attach_menu_open")
-                except Exception as e:
-                    print(f"[ERROR] Failed to click Attach button: {e}")
-                    self._save_debug_screenshot(page, "error_attach_click")
-                    return False
-
-                # 3. Click 'Photos & Videos' and Upload
-                try:
-                    print("[INFO] Selecting 'Photos & videos' option...")
-                    # The menu might take a moment to animate
-                    # We try multiple ways to find the 'Photos & videos' button
-                    media_option_selectors = [
-                        'li:has-text("Photos & videos")',
-                        'div[aria-label="Photos & videos"]',
-                        'span:has-text("Photos & videos")',
-                        '[data-icon="attach-image"]'
-                    ]
-                    
-                    target_option = None
-                    for sel in media_option_selectors:
-                        loc = page.locator(sel).first
-                        if loc.count() > 0:
-                            target_option = loc
-                            break
-                    
-                    if not target_option:
-                        print("[ERROR] Could not find 'Photos & videos' menu item.")
-                        self._save_debug_screenshot(page, "error_menu_item_not_found")
-                        return False
-
-                    print(f"[INFO] Clicking option and handling file chooser...")
-                    with page.expect_file_chooser() as fc_info:
-                        # Use force=True because WA menus often have hidden overlays
-                        target_option.click(force=True)
-                    
-                    file_chooser = fc_info.value
-                    file_chooser.set_files(image_path)
-                    
-                    print("[INFO] Image uploaded via File Chooser.")
-                    time.sleep(10) # Heavy wait for media generation
-                    self._save_debug_screenshot(page, "6_file_set_via_chooser")
-                except Exception as e:
-                    print(f"[ERROR] UI-driven upload failed: {e}")
-                    # Final fallback: look for the input that just appeared
-                    print("[INFO] Attempting direct input fallback...")
-                    try:
-                        file_input = page.locator('input[type="file"][accept*="video/mp4"], input[type="file"][accept*="image/"]').first
-                        file_input.set_input_files(image_path)
-                        time.sleep(10)
-                    except: pass
-                    self._save_debug_screenshot(page, "error_ui_upload")
-
-                # --- PHASE 3: Handle Preview Modal (Caption & Send) ---
-                print("[INFO] Waiting for image preview modal...")
-                try:
-                    # Look for the media preview footer or the send button
-                    send_selectors = [
-                        'span[data-icon="send"]',
-                        '[data-icon="send"]',
-                        '[aria-label="Send"]'
-                    ]
-                    
-                    send_button = None
-                    print("[INFO] Searching for send button...")
-                    # WA preview modal often has a 1-2s entry animation
-                    time.sleep(5)
-                    
-                    for selector in send_selectors:
-                        try:
-                            # In the preview modal, the send button is usually the last one
-                            btn = page.locator(selector).last
-                            if btn.is_visible(timeout=10000):
-                                send_button = btn
-                                print(f"[INFO] Found send button: {selector}")
-                                break
-                        except: continue
-                    
-                    if not send_button:
-                         print("[ERROR] Could not find send button in preview modal.")
-                         self._save_debug_screenshot(page, "error_no_send_button")
-                         return False
-
-                    self._save_debug_screenshot(page, "7_preview_modal")
-                    
-                    if caption:
-                        print(f"[INFO] Typing caption: {caption}")
-                        # In the media editor, we want the caption box specifically.
-                        # Using force click to bypass interception.
-                        caption_box = page.locator('div[aria-placeholder="Add a caption"]').last
-                        
-                        if caption_box.count() == 0:
-                             print("[WARN] aria-placeholder not found, searching for contenteditable in viewer footer...")
-                             caption_box = page.locator('footer div[contenteditable="true"], .media-viewer-footer div[contenteditable="true"]').last
-                        
-                        if caption_box.count() == 0:
-                             caption_box = page.locator('div[contenteditable="true"]').last
-                        
-                        # Use force=True to handle the "intercepted pointer events" error
-                        caption_box.click(force=True)
+                    landing_btn = page.locator('a[title="Share on WhatsApp"], button:has-text("Continue to Chat"), span:has-text("Continue to Chat")').first
+                    if landing_btn.is_visible(timeout=5000):
+                        print("[INFO] detected 'Continue to Chat' landing page. Clicking...")
+                        landing_btn.click()
                         time.sleep(2)
                         
-                        # Use keyboard to type character by character
-                        # First clear any placeholder
-                        page.keyboard.press("Control+A")
-                        page.keyboard.press("Backspace")
-                        
-                        # Type character by character to handle newlines correctly
-                        # In WA Media Editor, plain \n sometimes sends or behaves weirdly.
-                        # Shift+Enter is the standard for newline in captions.
-                        for char in caption:
-                            if char == '\n':
-                                page.keyboard.press("Shift+Enter")
-                            else:
-                                page.keyboard.type(char)
-                            time.sleep(0.02) # Subtle character delay
-                            
-                        time.sleep(3)
-                        self._save_debug_screenshot(page, "8_caption_filled")
+                        web_link = page.locator('a:has-text("use WhatsApp Web"), span:has-text("use WhatsApp Web")').first
+                        if web_link.is_visible(timeout=5000):
+                             print("[INFO] Clicking 'use WhatsApp Web'...")
+                             web_link.click()
+                except: pass
 
-                    print("[INFO] Sending message...")
-                    send_button.click(force=True)
-                    
-                    # Wait for message to actually send (modal closes)
-                    time.sleep(10) 
-                    
-                    print("[OK] Message send process completed.")
-                    self._save_debug_screenshot(page, "9_final")
-                    context.storage_state(path=self.session_path)
-                    return True
-                except Exception as e:
-                    print(f"[ERROR] Preview/Send failed: {e}")
-                    self._save_debug_screenshot(page, "error_preview")
-                    return False
+                # Wait for the chat input box specifically
+                page.wait_for_selector('div[aria-placeholder="Type a message"]', timeout=60000)
+                time.sleep(3) 
             except Exception as e:
-                print(f"[ERROR] WhatsApp Web automation error: {e}")
+                print(f"[ERROR] Chat failed to load: {e}")
+                self._save_debug_screenshot(page, "chat_load_fail")
                 return False
 
-        # Support both Provided Browser and Creating New One
-        if browser:
-            return _send_logic(browser)
-        else:
+            # --- PHASE 2: UI-Driven File Upload ---
+            print("[INFO] Chat loaded. Triggering 'Attach' menu...")
+            
             try:
-                with Camoufox(headless=True) as new_browser:
-                    return _send_logic(new_browser)
+                # Click Attach (+)
+                attach_button = page.locator('span[data-icon="plus"], [aria-label="Attach"]').first
+                attach_button.click(force=True)
+                time.sleep(2)
+                
+                # Photos & Videos menu item
+                media_option = page.locator('li:has-text("Photos & videos"), [data-icon="attach-image"]').first
+                
+                if media_option.count() == 0:
+                    print("[ERROR] Could not find 'Photos & videos' menu item.")
+                    self._save_debug_screenshot(page, "error_menu_missing")
+                    return False
+
+                with page.expect_file_chooser() as fc_info:
+                    media_option.click(force=True)
+                
+                file_chooser = fc_info.value
+                file_chooser.set_files(image_path)
+                time.sleep(5)
             except Exception as e:
-                print(f"[ERROR] Browser launch failed: {e}")
+                print(f"[ERROR] UI-driven upload failed: {e}")
+                self._save_debug_screenshot(page, "error_upload")
+                return False
+
+            # --- PHASE 2.5: Pre-count Inputs (Snapshot) ---
+            # SKIPPED: User requested simpler explicit delays instead of complex state diffing.
+            
+            # --- PHASE 3: Handle Preview Modal ---
+            print("[INFO] Waiting for image preview modal...")
+            try:
+                # 1. Primary Wait: Use the user-confirmed text "Type a message" 
+                # BUT we must ensure we don't just find the background one. 
+                # We wait for the COUNT of "Type a message" inputs to increase or for a NEW one.
+                
+                # Wait for the modal container or just the presence of a NEW input
+                # User Flow: Wait for fully loading
+                time.sleep(5) # explicit heavy wait for modal load (User Request)
+                
+                caption_box = None
+                
+                # Find the caption box.
+                # User provided exact selector: div[aria-placeholder="Type a message"][data-lexical-editor="true"]
+                # There are TWO such elements: main chat + modal caption. Modal is the LAST one.
+                print("[INFO] Finding caption box (aria-placeholder='Type a message')...")
+                
+                # Target the specific Lexical editor input
+                caption_inputs = page.locator('div[aria-placeholder="Type a message"][data-lexical-editor="true"]')
+                input_count = caption_inputs.count()
+                print(f"[DEBUG] Found {input_count} matching caption inputs.")
+                
+                # Debug: Log bounding boxes of all found inputs
+                for i in range(input_count):
+                    inp = caption_inputs.nth(i)
+                    try:
+                        box = inp.bounding_box()
+                        is_vis = inp.is_visible()
+                        print(f"[DEBUG] Input {i}: visible={is_vis}, bbox={box}")
+                    except Exception as e:
+                        print(f"[DEBUG] Input {i}: error getting info: {e}")
+                
+                # Select the visible input with the SMALLEST y-coordinate (modal caption is higher up)
+                # The modal caption appears ABOVE the main chat input in the preview
+                best_candidate = None
+                best_y = float('inf')
+                
+                for i in range(input_count):
+                    inp = caption_inputs.nth(i)
+                    if inp.is_visible():
+                        box = inp.bounding_box()
+                        # Modal caption should be on the RIGHT side (x > 300) AND have smaller y
+                        if box and box.get('x', 0) > 300:
+                            y = box.get('y', float('inf'))
+                            if y < best_y:
+                                best_y = y
+                                best_candidate = inp
+                                print(f"[DEBUG] Better candidate at index {i}: y={y}")
+                
+                if best_candidate:
+                    caption_box = best_candidate
+                    print(f"[INFO] Selected caption box with smallest y={best_y}")
+                elif input_count > 0:
+                    # Fallback: just take the first one
+                    caption_box = caption_inputs.first
+                    print("[WARN] Using fallback: first input")
+                
+                if caption_box:
+                    print(f"[INFO] Caption box selected: {caption_box}")
+                    # Highlight with VERY visible styling
+                    try:
+                        caption_box.evaluate("""el => {
+                            el.style.outline = '5px solid red';
+                            el.style.outlineOffset = '-2px';
+                            el.style.backgroundColor = 'rgba(255, 0, 0, 0.1)';
+                        }""")
+                        self._save_debug_screenshot(page, "debug_caption_box_selected")
+                        print("[DEBUG] Highlighted caption box with red outline")
+                    except Exception as e:
+                        print(f"[WARN] Could not highlight: {e}")
+                else:
+                    print("[ERROR] No caption box found.")
+                    self._save_debug_screenshot(page, "error_no_caption_box")
+                
+                # Proceed to Typing/Sending...
+
+                
+                if caption and caption_box:
+                    print(f"[INFO] Typing caption...")
+                    
+                    # Focus the caption box
+                    caption_box.click(force=True)
+                    time.sleep(1)
+                    caption_box.focus()
+                    
+                    # TYPE: Use Playwright's type() for direct text input
+                    # Split by newlines and handle them as Shift+Enter
+                    lines = caption.split('\n')
+                    for i, line in enumerate(lines):
+                        if line:
+                            caption_box.type(line, delay=10)  # 10ms delay between chars
+                        if i < len(lines) - 1:  # Add newline except after last line
+                            page.keyboard.press("Shift+Enter")
+                    
+                    time.sleep(1)
+                    
+                    print("[INFO] Caption typed.")
+
+                time.sleep(2) # USER REQUEST: 1 sec explicit delay before send (made it 2s)
+                
+                print("[INFO] Sending message...")
+                send_button_candidates = page.locator('span[data-icon="send"], [data-icon="send"], [aria-label="Send"]')
+                send_button = None
+                
+                if send_button_candidates.count() > 0:
+                     send_button = send_button_candidates.last # Modal button is usually last
+                
+                if send_button and send_button.is_visible():
+                     send_button.click(force=True)
+                else:
+                     print("[WARN] Send button not found. Trying global search.")
+                     page.locator('[data-icon="send"]').last.click(force=True)
+                     
+                time.sleep(5) # Wait for send animation
+                
+                # --- STEP 5: Verify Message Appears in DOM ---
+                print("[INFO] Verifying message in DOM...")
+                try:
+                    # Wait for the image preview modal to close (it should disappear)
+                    # The send button in modal should no longer be visible
+                    time.sleep(3)
+                    
+                    # Check if our message appears in the chat
+                    # Messages are typically in divs with class containing 'message-out'
+                    # We'll look for the caption text in the chat area
+                    if caption:
+                        caption_snippet = caption[:20].strip()  # First 20 chars
+                        message_check = page.locator(f'div.message-out:has-text("{caption_snippet}")')
+                        if message_check.count() > 0:
+                            print("[OK] Message verified in DOM!")
+                        else:
+                            print("[WARN] Could not verify message in DOM (may still have been sent).")
+                    
+                    self._save_debug_screenshot(page, "after_send_verification")
+                except Exception as ve:
+                    print(f"[WARN] DOM verification failed: {ve}")
+                
+                print("[OK] Message send process completed.")
+                return True
+
+            except Exception as e:
+                print(f"[ERROR] Caption/Send failed: {e}")
+                self._save_debug_screenshot(page, "error_send_flow")
+                return False
+        except Exception as e:
+            print(f"[ERROR] Automation error: {e}")
+            return False
+
+    def send_image(self, recipient_number, image_path, caption="", browser=None):
+        """Send a single image via WhatsApp Web"""
+        print(f"[INFO] Sending single image to {recipient_number}...")
+        
+        if browser:
+            # Legacy/Manual mode: use provided browser instance
+            context = self._get_context(browser)
+            return self._core_send_image(context, recipient_number, image_path, caption)
+        else:
+            # Persistent mode: use our internal WAHA context
+            try:
+                context = self.start()
+                result = self._core_send_image(context, recipient_number, image_path, caption)
+                time.sleep(2)
+                self.stop()
+                return result
+            except Exception as e:
+                print(f"[ERROR] Single send failed: {e}")
+                self.stop()
                 return False
 
     def send_to_multiple(self, image_path, recipient_numbers, caption="", delay_seconds=5, browser=None):
-        """Web version of bulk sender"""
+        """Batch sender with persistent session support"""
         successful_sends = 0
         failed_sends = 0
         
-        # Internal loop helper
-        def _loop(browser_instance):
+        def _loop(context_instance):
             nonlocal successful_sends, failed_sends
             for idx, recipient in enumerate(recipient_numbers, 1):
                 print(f"\n[{idx}/{len(recipient_numbers)}] Sending to {recipient}...")
                 
-                if self.send_image(recipient, image_path, caption, browser=browser_instance):
+                # Add debug number to caption
+                debug_caption = f"{caption}\n[Debug #{idx}]"
+                
+                if self._core_send_image(context_instance, recipient, image_path, debug_caption):
                     successful_sends += 1
                 else:
                     failed_sends += 1
                 
                 if idx < len(recipient_numbers):
-                    wait_time = delay_seconds + 5 # Extra buffer
+                    wait_time = delay_seconds + 5
                     print(f"[INFO] Waiting {wait_time}s...")
                     time.sleep(wait_time)
         
         if browser:
-             _loop(browser)
+            # Legacy mode
+            _loop(self._get_context(browser))
         else:
+             # WAHA Persistent Mode (Effecient)
+             print("[INFO] Batch Mode: Using persistent WAHA session...")
              try:
-                 with Camoufox(headless=True) as new_browser:
-                    _loop(new_browser)
+                 context = self.start()
+                 _loop(context)
+                 time.sleep(2)
+                 self.stop()
              except Exception as e:
-                 print(f"[ERROR] Bulk sender browser failed: {e}")
+                 print(f"[ERROR] Batch send failed: {e}")
+                 self.stop()
         
         return successful_sends, failed_sends
 

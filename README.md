@@ -253,10 +253,11 @@ You can choose between the official API and the native web automation using `WHA
 **To use WhatsApp Web Mode:**
 1.  Set `WHATSAPP_BACKEND=WEB` in `.env`.
 2.  Ensure port `3000` is mapped in your Docker command or `docker-compose.yml` (required for QR scan).
-3.  Run the application. The bot will automatically start a **Live QR Dashboard**.
-4.  Open `http://localhost:3000` on your computer.
-5.  Scan the QR code with your phone (Linked Devices).
-6.  The session is saved to `cache/whatsapp_session.json` and will persist indefinitely.
+3.  Run the application. 
+    - **First Run**: The bot will navigate to `web.whatsapp.com` and start a **Live QR Dashboard**.
+    - **Open http://localhost:3000** to scan the QR code with your phone.
+4.  Once scanned, the session is saved to the **persistent profile** in `cache/whatsapp_profile`.
+5.  Future runs will auto-load this session. If the session expires, the bot will automatically detect it and show the QR dashboard again.
 
 **Docker Example:**
 ```bash
