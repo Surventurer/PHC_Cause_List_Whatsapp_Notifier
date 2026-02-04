@@ -191,6 +191,12 @@ docker compose up -d
 docker compose logs -f
 ```
 
+> [!IMPORTANT]
+> **First-Time Setup**: When running Docker for the first time (or after session expiry), WhatsApp login is required:
+> 1. Open **`http://localhost:3000`** in your browser after starting the container
+> 2. Scan the QR code using WhatsApp on your phone (Menu > Linked Devices > Link a Device)
+> 3. Once linked, the session is saved and you won't need to scan again
+
 ### Container Specs
 
 | Feature | Value |

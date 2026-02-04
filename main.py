@@ -1166,6 +1166,79 @@ def run_scheduler():
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 
+def check_whatsapp_login():
+    """
+    First-time setup: Check if WhatsApp Web session exists.
+    If not logged in, prompt user to scan QR code before starting scheduler.
+    Returns True if logged in successfully, False otherwise.
+    """
+    load_dotenv()
+    
+    WHATSAPP_BACKEND = os.getenv("WHATSAPP_BACKEND", "OFFICIAL").upper()
+    
+    # Only needed for WEB backend
+    if WHATSAPP_BACKEND != "WEB":
+        print("[INFO] Using OFFICIAL backend - no WhatsApp login required.")
+        return True
+    
+    print("=" * 50)
+    print("WhatsApp Web Login Check")
+    print("=" * 50)
+    
+    web_client = WhatsAppWebClient()
+    profile_dir = os.path.join(web_client.cache_dir, "whatsapp_profile")
+    
+    # Check if profile exists (indicates previous login)
+    if os.path.exists(profile_dir) and os.listdir(profile_dir):
+        print("[INFO] Existing WhatsApp session found. Verifying...")
+    else:
+        print("[INFO] No WhatsApp session found. First-time login required!")
+        print("[INFO] Starting WhatsApp Web to generate QR code...")
+    
+    # Attempt to start session and verify/perform login
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        context = web_client.start()
+        
+        if context.pages:
+            page = context.pages[0]
+        else:
+            page = context.new_page()
+        
+        page.set_default_timeout(120000)  # 2 minute timeout for login
+        
+        # Navigate to WhatsApp Web
+        print("[INFO] Opening WhatsApp Web...")
+        page.goto("https://web.whatsapp.com/")
+        
+        # Use the existing _ensure_loggedin method which handles QR flow
+        login_success = web_client._ensure_loggedin(page)
+        
+        web_client.stop()
+        
+        if login_success:
+            print("=" * 50)
+            print("[OK] WhatsApp login successful!")
+            print("[INFO] Session saved. Ready to start scheduler.")
+            print("=" * 50)
+            return True
+        else:
+            print("=" * 50)
+            print("[ERROR] WhatsApp login failed!")
+            print("[INFO] Please restart and scan the QR code when prompted.")
+            print("=" * 50)
+            return False
+            
+    except Exception as e:
+        print(f"[ERROR] Login check failed: {e}")
+        try:
+            web_client.stop()
+        except:
+            pass
+        return False
+
+
 def main():
     """Main execution function - runs in scheduler mode"""
     import sys
@@ -1180,6 +1253,13 @@ def main():
         else:
             print("[ERROR] Failed to send message or conditions not met")
     else:
+        # First-time setup: Check WhatsApp login before starting scheduler
+        print("[INFO] Checking WhatsApp login status...")
+        if not check_whatsapp_login():
+            print("[ERROR] Cannot start scheduler without WhatsApp login.")
+            print("[INFO] Please ensure you can access http://localhost:3000 to scan QR code.")
+            sys.exit(1)
+        
         # Run the scheduler
         run_scheduler()
 
