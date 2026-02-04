@@ -24,9 +24,8 @@ COPY pyproject.toml uv.lock ./
 # We also install playwright browsers and system dependencies here
 RUN uv sync --frozen --no-dev
 
-# Install Playwright browsers (Firefox) and their system dependencies
-# This is crucial for Camoufox
-RUN uv run playwright install --with-deps firefox
+# Install Playwright browsers (Firefox for Camoufox, Chromium for WhatsApp Web)
+RUN uv run playwright install --with-deps firefox chromium
 
 # Pre-fetch Camoufox browser binary to bake it into the image
 RUN uv run python -m camoufox fetch

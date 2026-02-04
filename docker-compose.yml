@@ -10,7 +10,7 @@ services:
     environment:
       - TZ=Asia/Kolkata
       - SCREENSHOT_QUALITY=${SCREENSHOT_QUALITY:-HIGH}
-      - WHATSAPP_BACKEND=${WHATSAPP_BACKEND:-OFFICIAL}
+      - WHATSAPP_BACKEND=${WHATSAPP_BACKEND:-WEB}
     env_file:
       - .env
 

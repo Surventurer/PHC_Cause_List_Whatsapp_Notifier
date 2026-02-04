@@ -115,21 +115,25 @@ An automated system that monitors the Patna High Court website for new cause lis
 2. **Install dependencies**
    ```bash
    uv sync
-   uv run playwright install --with-deps firefox
+   # Install browsers for Automation (Chromium) and Anti-Bot (Firefox) 
+   uv run playwright install --with-deps chromium firefox
    ```
 
 3. **Configure environment variables**
    
    Create a `.env` file in the project root:
    ```env
-   PHONE_NUMBER_ID=your_whatsapp_phone_number_id
-   ACCESS_TOKEN=your_whatsapp_access_token
-   RECIPIENT_NUMBER=917XXXXXXXXX
-   ```
-
-   For multiple recipients, separate with commas:
-   ```env
-   RECIPIENT_NUMBER=917XXXXXXXXX,917YYYYYYYYY,917ZZZZZZZZZ
+   # Backend Selection: "WEB" (Free/Headless) or "OFFICIAL" (Paid Cloud API)
+   WHATSAPP_BACKEND=WEB
+   
+   # For WEB backend (Headless Automation)
+   RECIPIENT_NUMBER=917XXXXXXXXX,917YYYYYYYYY
+   SCREENSHOT_QUALITY=MEDIUM
+   
+   # For OFFICIAL backend (Meta Cloud API)
+   # NOTE: These are IGNORED if WHATSAPP_BACKEND=WEB
+   PHONE_NUMBER_ID=your_id
+   ACCESS_TOKEN=your_token
    ```
 
 ---
@@ -154,125 +158,49 @@ uv run main.py --once
 
 ---
 
+## Web Automation (Headless Mode)
+
+The system defaults to `WHATSAPP_BACKEND=WEB`, which uses robust headless browser automation to send messages via your existing phone number (Linked Device).
+
+### First-Time Login (QR Code)
+When running for the first time (or if the session expires), you need to link your device:
+
+1.  Run the bot (`uv run main.py` or via Docker).
+2.  The bot will detect it needs authentication.
+3.  **Local Run**: A window might open, or check the terminal.
+4.  **Headless/Docker Run**:
+    - The bot starts a **Live QR Dashboard**.
+    - Open **`http://localhost:3000`** in your browser.
+    - Scan the QR code using WhatsApp on your phone (Menu > Linked Devices).
+5.  **Session Saved**: Once scanned, the session is encrypted and saved to `cache/whatsapp_profile`. You won't need to scan again.
+
+---
+
 ## Docker Deployment
 
 ### Build and Run
 
 ```bash
-# Build the image (Downloads Camoufox browser (~700MB) once into the image)
+# Build the image (Downloads browsers ~700MB)
 docker compose build
 
-# Run in background
+# Run in background (Ports 3000 mapped for QR)
 docker compose up -d
 
-# View logs
+# View logs to check for QR code prompt
 docker compose logs -f
-
-# Stop
-docker compose down
 ```
 
-### Docker Features
+### Container Specs
 
 | Feature | Value |
 |---------|-------|
-| Base Image | `python:3.12-slim-bookworm` (Debian) |
-| Browser | Camoufox (Stealth Firefox) |
-| Memory Limit | 1024MB (Required for browser) |
-| CPU Limit | 1.0 cores |
-| Auto-restart | Yes (unless-stopped) |
-| Log Rotation | 10MB x 3 files |
+| Base Image | `python:3.12-slim-bookworm` |
+| Browsers | Chromium (Automation), Camoufox (Stealth) |
+| Memory Limit | 1024MB |
+| Auto-Cleanup | Yes (Corrupted sessions auto-deleted) |
 
 ---
-
-## Project Structure
-
-```
-PHC_Cause_List_Whatsapp_Notifier/
-├── main.py              # Main application logic
-├── Dockerfile           # Production container definition
-├── docker-compose.yml   # Orchestration for services
-├── pyproject.toml       # Python dependencies (uv)
-├── uv.lock              # Deterministic lock file
-├── .env                 # Secrets (Ignored by git)
-├── .gitignore           # File exclusion rules
-├── README.md            # This documentation
-├── LICENSE              # Project license
-└── cache/               # Local data (Ignored by git)
-    ├── screenshot.png   # Temporary image buffer
-    └── sent_today.txt   # Duplicate prevention marker
-```
-
----
-
-## Configuration
-
-### Time Window
-
-The scheduler is active between **8:00 PM** and **11:30 PM**. To modify, edit the `is_within_time_window()` function in `main.py`:
-
-```python
-def is_within_time_window(start_hour=20, start_minute=0, end_hour=23, end_minute=30):
-```
-
-### Check Interval
-
-Default is **10 minutes**. To modify, edit in `run_scheduler()`:
-
-```python
-CHECK_INTERVAL_SECONDS = 10 * 60  # 10 minutes
-```
-
-### Target URL
-
-Default URL monitors cause list for advocate code 4079. To change, modify in `send_cause_list()`:
-
-```python
-TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
-```
-
-### Screenshot Quality
-
-You can adjust the resolution and quality of the screenshot by setting the `SCREENSHOT_QUALITY` environment variable in your `.env` or `docker-compose.yml`.
-
-| Value | Resolution | Scale Factor | Description |
-|-------|------------|--------------|-------------|
-| `HIGH` (Default) | 1920x1080 | 2x | **Best Quality**. Retina-sharp text. Larger file size (~800KB). |
-| `MEDIUM` | 1280x720 | 1x | Good balance. Standard HD. (~400KB) |
-| `LOW` | 800x600 | 1x | Lowest file size (~250KB). Good for slow connections. |
-
-### WhatsApp Backend
-
-You can choose between the official API and the native web automation using `WHATSAPP_BACKEND`.
-
-| Value | Description | Authentication |
-|-------|-------------|---------------|
-| `OFFICIAL` (Default) | Fast, reliable Meta Cloud API | Requires Access Token & 24h window |
-| `WEB` | Native WhatsApp Web (Headless) | **Free & Unlimited**. Uses any number. |
-
-**To use WhatsApp Web Mode:**
-1.  Set `WHATSAPP_BACKEND=WEB` in `.env`.
-2.  Ensure port `3000` is mapped in your Docker command or `docker-compose.yml` (required for QR scan).
-3.  Run the application. 
-    - **First Run**: The bot will navigate to `web.whatsapp.com` and start a **Live QR Dashboard**.
-    - **Open http://localhost:3000** to scan the QR code with your phone.
-4.  Once scanned, the session is saved to the **persistent profile** in `cache/whatsapp_profile`.
-5.  Future runs will auto-load this session. If the session expires, the bot will automatically detect it and show the QR dashboard again.
-
-**Docker Example:**
-```bash
-docker compose run --rm -p 3000:3000 causelist-notifier
-```
-
----
-
-## Live QR Dashboard
-
-When using `WHATSAPP_BACKEND=WEB` in a headless environment (like Docker or a remote server), the bot provides a web-based dashboard to scan the QR code:
-
-- **URL**: `http://localhost:3000` (or your server's IP)
-- **Status**: Live-updates as you scan.
-- **Persistence**: Once scanned, the browser session is encrypted and saved locally. You won't need to scan again unless you manually log out from your phone.
 
 
 ---

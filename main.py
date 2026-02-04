@@ -240,14 +240,8 @@ class WhatsAppWebClient:
 
     def _save_debug_screenshot(self, page, name):
         """Helper to save debug screenshots with timestamp"""
-        try:
-            timestamp = datetime.now().strftime("%H%M%S")
-            filename = f"debug_{timestamp}_{name}.png"
-            path = os.path.join(self.cache_dir, filename)
-            page.screenshot(path=path, full_page=True)
-            print(f"[DEBUG] Saved screenshot: {filename}")
-        except Exception as e:
-            print(f"[WARN] Failed to save debug screenshot {name}: {e}")
+        # DISABLED for production
+        pass
 
     def _get_persistent_context(self, playwright):
         """
@@ -362,9 +356,15 @@ class WhatsAppWebClient:
             page.wait_for_selector('canvas, [data-icon="chat"], [data-icon="menu"], div[role="textbox"]', timeout=60000)
             time.sleep(2)
         except:
-             # Just a warm-up check, sometimes it's slow
              pass
-        
+        # 0. Wait for page load (Critical for Docker/Headless)
+        try:
+             print("[INFO] Waiting for WhatsApp to load (QR or Chat list)...")
+             # Wait for either #side (Logged in) OR canvas (QR Code) OR [data-testid="qrcode"] (QR container)
+             page.wait_for_selector('#side, canvas, [data-testid="qrcode"]', timeout=60000)
+        except Exception as e:
+             print(f"[WARN] Initial load timeout: {e}")
+
         # 1. Check if we are already logged in (Priority)
         # Stricter selectors that ONLY appear after login (not on QR page):
         # - #side: The main sidebar container (definitive)
@@ -789,10 +789,7 @@ class WhatsAppWebClient:
             for idx, recipient in enumerate(recipient_numbers, 1):
                 print(f"\n[{idx}/{len(recipient_numbers)}] Sending to {recipient}...")
                 
-                # Add debug number to caption
-                debug_caption = f"{caption}\n[Debug #{idx}]"
-                
-                if self._core_send_image(context_instance, recipient, image_path, debug_caption):
+                if self._core_send_image(context_instance, recipient, image_path, caption):
                     successful_sends += 1
                 else:
                     failed_sends += 1
@@ -1014,13 +1011,25 @@ def send_cause_list():
     
     # Configuration
     TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
+    
+    # ----------------------------------------------------
+    # BACKEND SELECTION
+    # ----------------------------------------------------
+    # "OFFICIAL" -> WhatsApp Business Cloud API (Meta)
+    # "WEB"      -> Native WhatsApp Web Automation (Camoufox)
+    WHATSAPP_BACKEND = os.getenv("WHATSAPP_BACKEND", "OFFICIAL").upper()
+    
     PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
     ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
     RECIPIENT_NUMBERS_STR = os.getenv("RECIPIENT_NUMBER")
     
-    # Validate environment variables
-    if not PHONE_NUMBER_ID or not ACCESS_TOKEN or not RECIPIENT_NUMBERS_STR:
-        raise ValueError("[ERROR] Missing required environment variables. Please check your .env file.")
+    # Validate environment variables based on Backend
+    if not RECIPIENT_NUMBERS_STR:
+         raise ValueError("[ERROR] Missing 'RECIPIENT_NUMBER' in .env file.")
+         
+    if WHATSAPP_BACKEND == "OFFICIAL":
+        if not PHONE_NUMBER_ID or not ACCESS_TOKEN:
+            raise ValueError("[ERROR] Missing 'PHONE_NUMBER_ID' or 'ACCESS_TOKEN' for OFFICIAL backend. Check .env file.")
     
     # Parse multiple recipient numbers (comma-separated)
     recipient_numbers = [num.strip() for num in RECIPIENT_NUMBERS_STR.split(',')]
@@ -1056,12 +1065,6 @@ def send_cause_list():
     print(f"Cause List Date: {cause_list_date.strftime('%A, %d-%m-%Y')}")
     print("=" * 50)
     
-    # ----------------------------------------------------
-    # BACKEND SELECTION
-    # ----------------------------------------------------
-    # "OFFICIAL" -> WhatsApp Business Cloud API (Meta)
-    # "WEB"      -> Native WhatsApp Web Automation (Camoufox)
-    WHATSAPP_BACKEND = os.getenv("WHATSAPP_BACKEND", "OFFICIAL").upper()
     print(f"[INFO] Using WhatsApp Backend: {WHATSAPP_BACKEND}")
     
     caption = f"Patna High Court Cause List\n{cause_list_date.strftime('%d-%m-%Y')}"
