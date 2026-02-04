@@ -245,8 +245,8 @@ class WhatsAppWebClient:
 
     def _get_persistent_context(self, playwright):
         """
-        Create a persistent browser context using WAHA's optimal configuration.
-        Source: waha/src/core/engines/webjs/session.webjs.core.ts
+        Create a persistent browser context using optimal WhatsApp Web configuration.
+        Source: Optimizations based on open-source WhatsApp Web automation research.
         """
         # Ensure profile directory exists in the cache
         self.profile_dir = os.path.join(self.cache_dir, "whatsapp_profile")
@@ -254,8 +254,8 @@ class WhatsAppWebClient:
         
         print(f"[INFO] Using persistent profile: {self.profile_dir}")
         
-        # WAHA Browser Arguments (Optimized for WhatsApp Web)
-        waha_args = [
+        # Browser Arguments (Optimized for WhatsApp Web)
+        browser_args = [
             '--disable-accelerated-2d-canvas',
             '--disable-application-cache',
             '--disable-client-side-phishing-detection',
@@ -292,15 +292,15 @@ class WhatsAppWebClient:
             '--disk-cache-size=1073741824', 
         ]
         
-        waha_user_agent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+        native_user_agent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
         
         context = playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
             headless=True,
-            args=waha_args,
+            args=browser_args,
             ignore_default_args=['--enable-automation'],
             viewport={'width': 1280, 'height': 720},
-            user_agent=waha_user_agent,
+            user_agent=native_user_agent,
             locale='en-US',
             timezone_id='Asia/Kolkata',
             permissions=['clipboard-read', 'clipboard-write'],  # Enable Clipboard for Copy/Paste
@@ -319,7 +319,7 @@ class WhatsAppWebClient:
         return context
 
     def start(self):
-        """Start the session (Reference to WAHA: session.start())"""
+        """Start the session"""
         from playwright.sync_api import sync_playwright
         print("[INFO] Starting persistent session...")
         self._playwright = sync_playwright().start()
@@ -327,7 +327,7 @@ class WhatsAppWebClient:
         return self._context
 
     def stop(self):
-        """Stop the session (Reference to WAHA: session.stop())"""
+        """Stop the session"""
         print("[INFO] Stopping session...")
         if hasattr(self, '_context'):
             self._context.close()
@@ -767,7 +767,7 @@ class WhatsAppWebClient:
             context = self._get_context(browser)
             return self._core_send_image(context, recipient_number, image_path, caption)
         else:
-            # Persistent mode: use our internal WAHA context
+            # Persistent mode: use our internal Native context
             try:
                 context = self.start()
                 result = self._core_send_image(context, recipient_number, image_path, caption)
@@ -803,8 +803,8 @@ class WhatsAppWebClient:
             # Legacy mode
             _loop(self._get_context(browser))
         else:
-             # WAHA Persistent Mode (Effecient)
-             print("[INFO] Batch Mode: Using persistent WAHA session...")
+             # Native Persistent Mode (Efficient)
+             print("[INFO] Batch Mode: Using persistent Native session...")
              try:
                  context = self.start()
                  _loop(context)

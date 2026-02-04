@@ -202,6 +202,24 @@ docker compose logs -f
 
 ---
 
+## Project Structure
+
+```
+PHC_Cause_List_Whatsapp_Notifier/
+├── main.py              # Main application logic (Scheduler & Whatsapp)
+├── Dockerfile           # Production container definition
+├── docker-compose.yml   # Orchestration for services
+├── pyproject.toml       # Python dependencies (uv)
+├── uv.lock              # Deterministic lock file
+├── .env                 # Secrets (Ignored by git)
+├── .gitignore           # File exclusion rules
+├── README.md            # This documentation
+├── LICENSE              # Project license
+└── cache/               # Local data (Ignored by git)
+    ├── whatsapp_profile/ # Persistent WhatsApp Web Session
+    ├── screenshot.png    # Temporary image buffer
+    └── sent_today.txt    # Duplicate prevention marker
+```
 
 ---
 
@@ -220,9 +238,18 @@ This unified approach ensures we only hit the court's servers once per check, re
 
 ### 2. WhatsApp Integration
 
-Uses WhatsApp Business Cloud API v21.0:
-1.  **Upload**: The captured screenshot is uploaded to WhatsApp servers to get a `media_id`.
-2.  **Send**: A message is sent to all configured recipients with the screenshot and a dynamic caption.
+
+
+The system supports two backends:
+
+**A. Web Backend (Default)**:
+1.  **Login**: Uses a persistent browser session (restored from cache).
+2.  **Attach**: Navigates to the chat, attaches the screenshot directly via the specific "Type a message" input.
+3.  **Send**: Simulates a user typing the caption and sending the message.
+
+**B. Official Backend (Legacy)**:
+1.  **Upload**: Uploads the screenshot to Meta's WhatsApp Cloud API to get a `media_id`.
+2.  **Send**: Sends a message payload via HTTP request.
 
 ### 3. Duplicate Prevention
 
