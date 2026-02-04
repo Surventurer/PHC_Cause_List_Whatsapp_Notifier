@@ -192,7 +192,7 @@ class QRHandler(SimpleHTTPRequestHandler):
             </html>
             """
             self.wfile.write(html.encode())
-        elif self.path == '/whatsapp_qr.png':
+        elif self.path.startswith('/whatsapp_qr.png'):
             # Serve the specific file from the cache directory
             # We map this request to the actual file path dynamically
             cache_dir = getattr(self.server, 'cache_dir', 'cache')
@@ -302,7 +302,7 @@ class WhatsAppWebClient:
         
         context = playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
-            headless=False,
+            headless=True,
             args=waha_args,
             ignore_default_args=['--enable-automation'],
             viewport={'width': 1280, 'height': 720},
@@ -366,17 +366,31 @@ class WhatsAppWebClient:
              pass
         
         # 1. Check if we are already logged in (Priority)
-        # If the main UI is visible, we are logged in, even if a canvas is present (e.g. background/startup)
-        # Added div[role="textbox"] back as it often appears as the search bar
-        if page.locator('[data-icon="chat"], [data-icon="menu"], [data-icon="intro-md-beta-logo-dark"], [data-icon="intro-md-beta-logo-light"], div[role="textbox"]').count() > 0:
-            print("[INFO] Already logged in.")
-            return True
-
+        # Stricter selectors that ONLY appear after login (not on QR page):
+        # - #side: The main sidebar container (definitive)
+        # - #pane-side: The chat list container (definitive)
+        # - Chat list search box (only visible after login)
+        # NOTE: [data-icon="menu"] and [data-icon="chat"] removed - they appear on QR page too!
+        login_indicators = [
+            '#side', 
+            '#pane-side',
+            '[data-testid="chat-list-search"]',
+            'div[contenteditable="true"][data-tab="3"]', # Search bar input
+            '[aria-label*="Search or start a new chat"]' # Explicit search bar label
+        ]
+        
+        # Check any of them
+        for selector in login_indicators:
+            if page.locator(selector).first.is_visible():
+                print(f"[INFO] Already logged in (detected {selector}).")
+                return True
+        
         # Check for loading screen
         if page.locator('progress').is_visible() or page.locator('[data-testid="progress-bar"]').is_visible():
             print("[INFO] WhatsApp is loading... waiting.")
             try:
-                page.wait_for_selector('[data-icon="chat"], [data-icon="menu"]', timeout=30000)
+                # Wait for SIDEBAR which is the best indicator
+                page.wait_for_selector('#side', timeout=45000)
                 print("[INFO] Loading complete. Logged in.")
                 return True
             except:
@@ -385,26 +399,24 @@ class WhatsAppWebClient:
         # 2. Check for QR Code (Secondary)
         if page.locator('canvas').is_visible():
             print("[WARN] QR Code detected. Session not authenticated.")
-            # Verify if we really have chat list (sometimes canvas exists in background?)
-            # But usually canvas means scan needed.
-        
             print("[WARN] Not logged in. Starting Live QR Dashboard...")
             self._save_debug_screenshot(page, "auth_qr_needed")
             self._start_qr_server()
             print(f"[ACTION REQUIRED] Open http://localhost:3000 to scan the QR code.")
             
-            max_retries = 60 # 2 minutes to scan
+            max_retries = 60 # 2 minutes for QR scan
             for i in range(max_retries):
-                # Strict check for success
-                if page.locator('[data-icon="chat"], [data-icon="menu"], div[role="textbox"]').count() > 0:
-                    print("[INFO] Login detected!")
-                    time.sleep(5)
-                    self._save_debug_screenshot(page, "login_success")
-                    return True
+                # Check for Login Success inside loop
+                for selector in login_indicators:
+                    if page.locator(selector).first.is_visible():
+                        print(f"[INFO] Login detected! (found {selector})")
+                        time.sleep(5)
+                        self._save_debug_screenshot(page, "login_success")
+                        return True
                 
-                # Snapshot for dashboard
+                # Check if QR expired or needs reload
                 if page.locator('canvas').is_visible():
-                    # Handle "Reload QR" button if it appears
+                    # Reload logic
                     reload_selectors = ['button:has-text("Click to reload QR")', '[data-icon="refresh-large"]', 'span[role="button"]:has-text("Reload")']
                     for sel in reload_selectors:
                         try:
@@ -417,25 +429,26 @@ class WhatsAppWebClient:
                         except: pass
 
                     try:
-                        # Strategy 1: The official container
-                        qr_container = page.locator('div[data-ref]').first
-                        if qr_container.is_visible():
-                            qr_container.screenshot(path=self.qr_path)
-                        else:
-                            # Strategy 2: The canvas itself
-                            page.locator('canvas').first.screenshot(path=self.qr_path)
-                    except:
-                        # Fallback: Just the center of the page
-                        page.screenshot(path=self.qr_path)
+                        # Full page screenshot as requested
+                        page.screenshot(path=self.qr_path, full_page=True)
+                        print(".", end="", flush=True)
+                    except Exception as e:
+                        print(f"[WARN] Failed to capture QR: {e}")
                 
                 time.sleep(2)
                 if i % 10 == 0:
-                    print(f"[INFO] Waiting for scan... ({i}/{max_retries})")
+                     print(f"[INFO] Waiting for scan... ({i}/{max_retries})")
             
-            print("[ERROR] Login timed out.")
+            print("[ERROR] QR Scan timed out.")
             return False
 
-        # Fallback: If we are here, we see neither a login screen nor a QR code
+        # 3. Fallback: Unknown State
+        # Maybe it's logged in but selectors failed? Take a closer look.
+        print("[WARN] Unknown state. Checking fallback selectors...")
+        if page.locator('#side').is_visible():
+             print("[INFO] Logged in (fallback check passed).")
+             return True
+
         print("[ERROR] Unknown state. Neither logged in nor QR code found.")
         self._save_debug_screenshot(page, "auth_failed_unknown_state")
         return False
@@ -803,6 +816,18 @@ class WhatsAppWebClient:
              except Exception as e:
                  print(f"[ERROR] Batch send failed: {e}")
                  self.stop()
+        
+        # Auto-cleanup corrupted profile if ALL sends failed
+        if failed_sends == len(recipient_numbers) and failed_sends > 0:
+            print("[WARN] All sends failed. Clearing potentially corrupted profile...")
+            try:
+                import shutil
+                if os.path.exists(self.profile_dir):
+                    shutil.rmtree(self.profile_dir)
+                    print(f"[INFO] Deleted profile: {self.profile_dir}")
+                    print("[INFO] A fresh QR login will be required on next run.")
+            except Exception as e:
+                print(f"[ERROR] Failed to delete profile: {e}")
         
         return successful_sends, failed_sends
 
