@@ -582,25 +582,80 @@ class WhatsAppWebClient:
             print("[INFO] Chat loaded. Triggering 'Attach' menu...")
             
             try:
-                # Click Attach (+)
-                attach_button = page.locator('span[data-icon="plus"], [aria-label="Attach"]').first
+                # Click Attach (+) button - multiple selectors for robustness
+                attach_selectors = [
+                    'span[data-icon="plus"]',
+                    'span[data-icon="attach-menu-plus"]',
+                    '[data-icon="clip"]',
+                    'button[aria-label="Attach"]',
+                    '[aria-label="Attach"]',
+                    'div[title="Attach"]',
+                ]
+                
+                attach_button = None
+                for sel in attach_selectors:
+                    try:
+                        btn = page.locator(sel).first
+                        if btn.is_visible(timeout=2000):
+                            attach_button = btn
+                            print(f"[INFO] Found attach button with selector: {sel}")
+                            break
+                    except:
+                        continue
+                
+                if not attach_button:
+                    print("[ERROR] Could not find Attach button.")
+                    self._save_debug_screenshot(page, "error_no_attach_button")
+                    return False
+                
                 attach_button.click(force=True)
                 time.sleep(2)
                 
-                # Photos & Videos menu item
-                media_option = page.locator('li:has-text("Photos & videos"), [data-icon="attach-image"]').first
+                # Photos & Videos menu item - multiple selectors for robustness
+                # WhatsApp Web UI changes frequently, so try many approaches
+                media_selectors = [
+                    '[data-icon="attach-image"]',
+                    'span[data-icon="attach-image"]',
+                    'li button[aria-label*="photo"]',
+                    'li button[aria-label*="Photo"]',
+                    'button:has-text("Photos")',
+                    'span:has-text("Photos & videos")',
+                    'li:has-text("Photos & videos")',
+                    'li:has-text("Photos")',
+                    '[aria-label*="Photos"]',
+                    '[aria-label*="photo"]',
+                    'input[accept*="image"]',  # Direct file input fallback
+                ]
                 
-                if media_option.count() == 0:
-                    print("[ERROR] Could not find 'Photos & videos' menu item.")
-                    self._save_debug_screenshot(page, "error_menu_missing")
-                    return False
-
-                with page.expect_file_chooser() as fc_info:
-                    media_option.click(force=True)
+                media_option = None
+                for sel in media_selectors:
+                    try:
+                        opt = page.locator(sel).first
+                        if opt.is_visible(timeout=1000):
+                            media_option = opt
+                            print(f"[INFO] Found media option with selector: {sel}")
+                            break
+                    except:
+                        continue
                 
-                file_chooser = fc_info.value
-                file_chooser.set_files(image_path)
-                time.sleep(5)
+                # Fallback: Try to find any file input for images
+                if not media_option:
+                    file_input = page.locator('input[type="file"][accept*="image"]').first
+                    if file_input.count() > 0:
+                        print("[INFO] Found direct file input. Using that instead.")
+                        file_input.set_input_files(image_path)
+                        time.sleep(5)
+                    else:
+                        print("[ERROR] Could not find 'Photos & videos' menu item or file input.")
+                        self._save_debug_screenshot(page, "error_menu_missing")
+                        return False
+                else:
+                    with page.expect_file_chooser() as fc_info:
+                        media_option.click(force=True)
+                    
+                    file_chooser = fc_info.value
+                    file_chooser.set_files(image_path)
+                    time.sleep(5)
             except Exception as e:
                 print(f"[ERROR] UI-driven upload failed: {e}")
                 self._save_debug_screenshot(page, "error_upload")
