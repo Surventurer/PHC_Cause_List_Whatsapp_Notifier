@@ -118,6 +118,7 @@ An automated system that monitors the Patna High Court website for new cause lis
    # Install browsers for Automation (Chromium) and Anti-Bot (Firefox) 
    uv run playwright install --with-deps chromium firefox
    ```
+   > *Tip*: If you forget this step on a new machine, the bot now auto-installs the required Playwright browsers during the first run.
 
 3. **Configure environment variables**
    

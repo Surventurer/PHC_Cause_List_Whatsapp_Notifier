@@ -2,6 +2,8 @@ import requests
 import os
 import time
 import re
+import subprocess
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -14,6 +16,21 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 # Define India Standard Time
 IST = ZoneInfo("Asia/Kolkata")
+
+
+def install_playwright_browsers():
+    """Install Playwright browser binaries when running on a fresh machine."""
+    cmd = [sys.executable, "-m", "playwright", "install", "chromium", "firefox"]
+    print("[INFO] Installing Playwright browsers (chromium, firefox)...")
+    try:
+        subprocess.run(cmd, check=True)
+    except Exception as error:
+        raise RuntimeError(f"Playwright install failed: {error}") from error
+
+
+def _is_playwright_browser_missing(error: Exception) -> bool:
+    message = str(error).lower()
+    return "executable doesn't exist" in message or "playwright install" in message
 
 
 class ScreenshotManager:
@@ -321,10 +338,31 @@ class WhatsAppWebClient:
     def start(self):
         """Start the session"""
         from playwright.sync_api import sync_playwright
-        print("[INFO] Starting persistent session...")
-        self._playwright = sync_playwright().start()
-        self._context = self._get_persistent_context(self._playwright)
-        return self._context
+
+        last_error = None
+        for attempt in range(2):
+            print("[INFO] Starting persistent session...")
+            self._playwright = sync_playwright().start()
+            try:
+                self._context = self._get_persistent_context(self._playwright)
+                return self._context
+            except Exception as error:
+                last_error = error
+                try:
+                    self._playwright.stop()
+                except Exception:
+                    pass
+                self._playwright = None
+
+                if attempt == 0 and _is_playwright_browser_missing(error):
+                    print("[WARN] Playwright browsers missing on this machine. Installing automatically...")
+                    install_playwright_browsers()
+                    continue
+
+                raise
+
+        if last_error:
+            raise last_error
 
     def stop(self):
         """Stop the session"""
