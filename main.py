@@ -395,7 +395,7 @@ class WhatsAppWebClient:
             time.sleep(2)
         except:
              pass
-        # 0. Wait for page load (Critical for Docker/Headless)
+        # 0. Wait for page load (Critical for headless runs)
         try:
              print("[INFO] Waiting for WhatsApp to load (QR or Chat list)...")
              # Wait for either #side (Logged in) OR canvas (QR Code) OR [data-testid="qrcode"] (QR container)

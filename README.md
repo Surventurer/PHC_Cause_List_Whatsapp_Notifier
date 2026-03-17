@@ -102,7 +102,6 @@ An automated system that monitors the Patna High Court website for new cause lis
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv) package manager
 - WhatsApp Business Cloud API access
-- Docker (for production deployment)
 
 ### Setup
 
@@ -166,46 +165,14 @@ The system defaults to `WHATSAPP_BACKEND=WEB`, which uses robust headless browse
 ### First-Time Login (QR Code)
 When running for the first time (or if the session expires), you need to link your device:
 
-1.  Run the bot (`uv run main.py` or via Docker).
+1.  Run the bot (`uv run main.py`).
 2.  The bot will detect it needs authentication.
 3.  **Local Run**: A window might open, or check the terminal.
-4.  **Headless/Docker Run**:
+4.  **Headless Run**:
     - The bot starts a **Live QR Dashboard**.
     - Open **`http://localhost:3000`** in your browser.
     - Scan the QR code using WhatsApp on your phone (Menu > Linked Devices).
 5.  **Session Saved**: Once scanned, the session is encrypted and saved to `cache/whatsapp_profile`. You won't need to scan again.
-
----
-
-## Docker Deployment
-
-### Build and Run
-
-```bash
-# Build the image (Downloads browsers ~700MB)
-docker compose build
-
-# Run in background (Ports 3000 mapped for QR)
-docker compose up -d
-
-# View logs to check for QR code prompt
-docker compose logs -f
-```
-
-> [!IMPORTANT]
-> **First-Time Setup**: When running Docker for the first time (or after session expiry), WhatsApp login is required:
-> 1. Open **`http://localhost:3000`** in your browser after starting the container
-> 2. Scan the QR code using WhatsApp on your phone (Menu > Linked Devices > Link a Device)
-> 3. Once linked, the session is saved and you won't need to scan again
-
-### Container Specs
-
-| Feature | Value |
-|---------|-------|
-| Base Image | `python:3.12-slim-bookworm` |
-| Browsers | Chromium (Automation), Camoufox (Stealth) |
-| Memory Limit | 1024MB |
-| Auto-Cleanup | Yes (Corrupted sessions auto-deleted) |
 
 ---
 
@@ -214,8 +181,6 @@ docker compose logs -f
 ```
 PHC_Cause_List_Whatsapp_Notifier/
 ├── main.py              # Main application logic (Scheduler & Whatsapp)
-├── Dockerfile           # Production container definition
-├── docker-compose.yml   # Orchestration for services
 ├── pyproject.toml       # Python dependencies (uv)
 ├── uv.lock              # Deterministic lock file
 ├── .env                 # Secrets (Ignored by git)
