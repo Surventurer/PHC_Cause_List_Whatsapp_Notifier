@@ -125,6 +125,9 @@ An automated system that monitors the Patna High Court website for new cause lis
    ```env
    # Backend Selection: "WEB" (Free/Headless) or "OFFICIAL" (Paid Cloud API)
    WHATSAPP_BACKEND=WEB
+
+   # Target cause list page (override if URL changes)
+   CAUSE_LIST_URL=https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST
    
    # For WEB backend (Headless Automation)
    RECIPIENT_NUMBER=917XXXXXXXXX,917YYYYYYYYY
@@ -135,6 +138,7 @@ An automated system that monitors the Patna High Court website for new cause lis
    PHONE_NUMBER_ID=your_id
    ACCESS_TOKEN=your_token
    ```
+   CAUSE_LIST_URL defaults to the current Patna High Court cause list page; override it here if the site path changes.
 
 ---
 
@@ -155,6 +159,7 @@ Execute a single check immediately:
 ```bash
 uv run main.py --once
 ```
+If `WHATSAPP_BACKEND=WEB` and no active session exists, the QR dashboard opens at http://localhost:3000 for scanning (same as scheduler mode). As soon as login is detected, the dashboard stops and the cached `cache/whatsapp_qr.png` is removed automatically.
 
 ---
 

@@ -178,14 +178,14 @@ class QRHandler(SimpleHTTPRequestHandler):
                 <title>WhatsApp Web Login</title>
                 <meta http-equiv="refresh" content="2">
                 <style>
-                    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f2f5; margin: 0; }
-                    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); display: inline-block; max-width: 400px; margin-top: 50px; }
-                    h1 { color: #128C7E; font-size: 24px; margin-bottom: 10px; }
-                    .status { display: inline-block; padding: 5px 15px; background: #e7f3ff; color: #007bff; border-radius: 20px; font-weight: bold; margin-bottom: 20px; }
-                    .qr-container { border: 2px solid #25d366; padding: 10px; border-radius: 10px; background: white; }
-                    img { display: block; width: 100%; height: auto; border-radius: 5px; }
-                    .steps { text-align: left; margin-top: 20px; color: #555; font-size: 14px; }
-                    .steps ol { padding-left: 20px; }
+                    body { font-family: sans-serif; text-align: center; padding: 30px; background: #eef2f7; margin: 0; }
+                    .card { background: white; padding: 32px; border-radius: 18px; box-shadow: 0 14px 28px rgba(0,0,0,0.12); display: inline-block; max-width: 560px; margin-top: 30px; }
+                    h1 { color: #128C7E; font-size: 32px; margin-bottom: 14px; }
+                    .status { display: inline-block; padding: 12px 26px; background: #e7f3ff; color: #007bff; border-radius: 24px; font-weight: bold; margin-bottom: 26px; font-size: 20px; }
+                    .qr-container { border: 2px solid #25d366; padding: 18px; border-radius: 16px; background: white; display: flex; justify-content: center; }
+                    img { display: block; width: 480px; max-width: 100%; height: auto; border-radius: 10px; }
+                    .steps { text-align: left; margin-top: 26px; color: #444; font-size: 18px; line-height: 1.7; }
+                    .steps ol { padding-left: 26px; }
                 </style>
             </head>
             <body>
@@ -238,6 +238,7 @@ class WhatsAppWebClient:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.session_path = os.path.join(self.cache_dir, "whatsapp_session.json")
         self.qr_path = os.path.join(self.cache_dir, "whatsapp_qr.png")
+        self._qr_server = None
         
     def _start_qr_server(self):
         """Starts a background HTTP server to serve the QR code"""
@@ -249,11 +250,33 @@ class WhatsAppWebClient:
             thread = threading.Thread(target=server.serve_forever)
             thread.daemon = True
             thread.start()
+            self._qr_server = server
             print("[INFO] Live QR Dashboard running at: http://localhost:3000")
             return server
         except Exception as e:
             print(f"[WARN] Failed to start QR server: {e}")
             return None
+
+    def _stop_qr_server(self):
+        """Stops the QR HTTP server if running"""
+        if self._qr_server:
+            try:
+                self._qr_server.shutdown()
+                self._qr_server.server_close()
+                print("[INFO] QR dashboard stopped.")
+            except Exception as e:
+                print(f"[WARN] Failed to stop QR server: {e}")
+            finally:
+                self._qr_server = None
+
+    def _cleanup_qr_file(self):
+        """Remove cached QR image if present"""
+        try:
+            if os.path.exists(self.qr_path):
+                os.remove(self.qr_path)
+                print(f"[INFO] Removed QR image: {self.qr_path}")
+        except Exception:
+            pass
 
     def _save_debug_screenshot(self, page, name):
         """Helper to save debug screenshots with timestamp"""
@@ -421,6 +444,8 @@ class WhatsAppWebClient:
         for selector in login_indicators:
             if page.locator(selector).first.is_visible():
                 print(f"[INFO] Already logged in (detected {selector}).")
+                self._stop_qr_server()
+                self._cleanup_qr_file()
                 return True
         
         # Check for loading screen
@@ -430,6 +455,8 @@ class WhatsAppWebClient:
                 # Wait for SIDEBAR which is the best indicator
                 page.wait_for_selector('#side', timeout=45000)
                 print("[INFO] Loading complete. Logged in.")
+                self._stop_qr_server()
+                self._cleanup_qr_file()
                 return True
             except:
                 print("[WARN] Timed out waiting for load.")
@@ -450,6 +477,8 @@ class WhatsAppWebClient:
                         print(f"[INFO] Login detected! (found {selector})")
                         time.sleep(5)
                         self._save_debug_screenshot(page, "login_success")
+                        self._stop_qr_server()
+                        self._cleanup_qr_file()
                         return True
                 
                 # Check if QR expired or needs reload
@@ -1103,7 +1132,10 @@ def send_cause_list():
     today = datetime.now(IST)
     
     # Configuration
-    TARGET_URL = "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST"
+    TARGET_URL = os.getenv(
+        "CAUSE_LIST_URL",
+        "https://patnahighcourt.gov.in/causelist/auin/view/4079/0/CLIST",
+    )
     
     # ----------------------------------------------------
     # BACKEND SELECTION
@@ -1309,6 +1341,8 @@ def check_whatsapp_login():
         login_success = web_client._ensure_loggedin(page)
         
         web_client.stop()
+        web_client._stop_qr_server()
+        web_client._cleanup_qr_file()
         
         if login_success:
             print("=" * 50)
@@ -1327,6 +1361,8 @@ def check_whatsapp_login():
         print(f"[ERROR] Login check failed: {e}")
         try:
             web_client.stop()
+            web_client._stop_qr_server()
+            web_client._cleanup_qr_file()
         except:
             pass
         return False
@@ -1335,16 +1371,32 @@ def check_whatsapp_login():
 def main():
     """Main execution function - runs in scheduler mode"""
     import sys
+
+    def cleanup_qr_artifacts():
+        qr_path = os.path.join("cache", "whatsapp_qr.png")
+        try:
+            if os.path.exists(qr_path):
+                os.remove(qr_path)
+                print(f"[INFO] Removed QR image: {qr_path}")
+        except Exception:
+            pass
     
     # Check for --once flag to run just once (for testing or cron)
     if len(sys.argv) > 1 and sys.argv[1] == "--once":
         print("[INFO] Running in single execution mode...")
         load_dotenv()
-        
+
+        # Ensure login / QR flow also runs in --once mode for WEB backend
+        if not check_whatsapp_login():
+            print("[ERROR] Cannot run --once without WhatsApp login.")
+            sys.exit(1)
+
         if send_cause_list():
             print("[OK] Message sent successfully!")
         else:
             print("[ERROR] Failed to send message or conditions not met")
+
+        cleanup_qr_artifacts()
     else:
         # First-time setup: Check WhatsApp login before starting scheduler
         print("[INFO] Checking WhatsApp login status...")
@@ -1353,6 +1405,7 @@ def main():
             print("[INFO] Please ensure you can access http://localhost:3000 to scan QR code.")
             sys.exit(1)
         
+        cleanup_qr_artifacts()
         # Run the scheduler
         run_scheduler()
 
